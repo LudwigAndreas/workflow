@@ -1,0 +1,30 @@
+schema: spec-driven
+
+# This repo owns its own specs (openspec/specs, openspec/changes) — the
+# local OpenSpec root resolves here automatically whenever a command runs
+# from inside this repo, no flag needed. Keep repo-internal specs here so
+# they stay co-located and co-reviewed with the code they describe.
+#
+# The shared "specifications" store below is for cross-cutting contracts
+# only (things another repo must agree on). It is additive, not exclusive:
+# it surfaces a read-only index of the shared store's specs into
+# propose/apply instructions without making it the root. To reach active
+# cross-repo changes directly, use --store specifications from anywhere on
+# a machine where the store is registered (see this repo's README.md).
+references:
+  - id: specifications
+    remote: git@github.com:LudwigAndreas/specifications.git
+
+# Per-artifact rules: enforce the analytics/developer artifact split (see
+# root AGENTS.md "Propose vs. plan"). proposal.md + specs/ (why + what) are
+# the business change proposal; design.md + tasks.md (how + step-by-step
+# implementation) require codebase/dev-pattern knowledge and are deferred to
+# whoever implements the change, as part of apply-prep.
+rules:
+  design:
+    - "Author this during implementation prep, after the proposal is reviewed/approved - typically by the developer who will implement the change, not the original proposal author."
+    - "If you are drafting the initial business proposal (proposal.md + specs), stop before this artifact. Leave it uncreated; the change is still valid and mergeable without it."
+  tasks:
+    - "This is the step-by-step implementation plan and requires knowledge of the actual codebase, its patterns, and its conventions - not something the business proposal author can responsibly write."
+    - "Author this during implementation prep, immediately before running apply - typically by the developer who will implement the change."
+    - "If you are drafting the initial business proposal (proposal.md + specs), stop before this artifact. Leave it uncreated; the change is still valid and mergeable without it."
