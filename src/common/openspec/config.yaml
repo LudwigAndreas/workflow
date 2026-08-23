@@ -28,3 +28,6 @@ rules:
     - "This is the step-by-step implementation plan and requires knowledge of the actual codebase, its patterns, and its conventions - not something the business proposal author can responsibly write."
     - "Author this during implementation prep, immediately before running apply - typically by the developer who will implement the change."
     - "If you are drafting the initial business proposal (proposal.md + specs), stop before this artifact. Leave it uncreated; the change is still valid and mergeable without it."
+    - "Structure tasks.md as one numbered section per affected repository, and nothing else - sections are repo slices (Common, Backend, Frontend, GitOps, QA), never work slices. If you need a section like 'Backend part two', the story was oversized and belongs in an Epic; say so instead of encoding it here."
+    - "Every section heading must carry its Jira task key in parentheses, e.g. '## 2. Backend (PROJ-125)'. For a single-repo story with no child tasks, use the story key. Ask the user for keys rather than inventing them - scripts/check-sdd.sh fails the change otherwise."
+    - "When a shared contract or the common package is involved, its section must land and publish before any consuming section starts. Write the gate as an HTML comment under the consuming heading so it survives review."

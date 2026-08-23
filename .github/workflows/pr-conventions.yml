@@ -1,0 +1,83 @@
+# PR conventions — the input validation for everything downstream.
+#
+# TEMPLATE for the application and GitOps repos. Copy it in as-is.
+#
+# The release pipeline derives version bumps from commit types and Jira Fix
+# Versions from issue keys in the commit range. Both are only as good as the
+# squash commit, and the squash commit is the PR title plus body. So this
+# checks the title, and repairs the body when the key is missing rather than
+# failing the author over a convention a script can satisfy.
+#
+# Set the repository to **squash merge only** (Settings → General → Pull
+# Requests) or none of this holds. See docs/release.md#commit-and-pr-conventions.
+
+name: PR conventions
+
+on:
+  pull_request:
+    types: [opened, edited, synchronize, reopened]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  conventions:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Conventional PR title
+        env:
+          TITLE: ${{ github.event.pull_request.title }}
+        run: |
+          if printf '%s' "$TITLE" | grep -qE '^(feat|fix|perf|refactor|docs|test|build|ci|chore|revert)(\([a-z0-9._-]+\))?!?: .+'; then
+            echo "title ok: $TITLE"
+          else
+            echo "::error::PR title must be a conventional commit."
+            echo "  got:      $TITLE"
+            echo "  expected: feat(auth): add SSO callback endpoint"
+            echo "  types:    feat fix perf refactor docs test build ci chore revert"
+            echo "  breaking: append ! before the colon -> feat(api)!: ..."
+            exit 1
+          fi
+
+      - name: Branch name carries a Jira key
+        env:
+          BRANCH: ${{ github.event.pull_request.head.ref }}
+        run: |
+          # renovate/dependabot branches are the one deliberate exception
+          case "$BRANCH" in
+            renovate/*|dependabot/*) echo "bot branch - exempt"; exit 0 ;;
+          esac
+          if printf '%s' "$BRANCH" | grep -qE '^([A-Z][A-Z0-9]+-[0-9]+/)?[A-Z][A-Z0-9]+-[0-9]+-[a-z0-9][a-z0-9-]*$'; then
+            echo "branch ok: $BRANCH"
+          else
+            echo "::error::Branch must be PROJ-123-slug, or PROJ-123/PROJ-124-slug for a multi-repo story."
+            echo "  got: $BRANCH"
+            echo "  see: docs/jira-sdd-mapping.md#branch-naming"
+            exit 1
+          fi
+
+      - name: Ensure the Jira key survives the squash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BRANCH: ${{ github.event.pull_request.head.ref }}
+          BODY: ${{ github.event.pull_request.body }}
+          PR: ${{ github.event.pull_request.number }}
+          REPO: ${{ github.repository }}
+        run: |
+          case "$BRANCH" in renovate/*|dependabot/*) exit 0 ;; esac
+
+          keys="$(printf '%s' "$BRANCH" | grep -oE '[A-Z][A-Z0-9]+-[0-9]+' | sort -u)"
+          missing=""
+          for k in $keys; do
+            printf '%s' "$BODY" | grep -q "$k" || missing="$missing $k"
+          done
+
+          if [ -z "${missing// /}" ]; then
+            echo "every key from the branch is already in the body"
+            exit 0
+          fi
+
+          echo "appending to the PR body:$missing"
+          printf '%s\n\n%s\n' "$BODY" "${missing# }" > body.txt
+          gh pr edit "$PR" --repo "$REPO" --body-file body.txt

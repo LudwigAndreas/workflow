@@ -1,189 +1,260 @@
 # Workflow repo — agent & developer guide
 
-This repo is the **analytics/architecture view** of a multirepo application:
-a shared spec store plus every application repo, checked out together as git
+This repo is the **cross-repo authoring view** of a multirepo application: a
+shared spec store plus every application repo, checked out together as git
 submodules, so proposals can be authored with full cross-repo context.
-Developers do **not** work out of this repo day to day — see "Two roles"
-below.
+Developers do **not** work out of this repo day to day — see "Two working
+modes" below.
+
+**Start here:** [`docs/pipeline.md`](./docs/pipeline.md) — one diagram, six
+roles, eleven gates in three phases. Everything below is the reference detail
+behind it.
 
 ## Repo map
 
 ```
-specifications/        shared OpenSpec store (submodule) — cross-cutting specs only
+docs/
+  pipeline.md            the whole flow: gates, owners, source-of-truth map
+  work-types.md          the lane for every kind of work, not just features
+  scrum.md               dual-track sprints, boards, DoR/DoD, ceremonies
+  release.md             versioning, tagging, promotion, the Jira feedback loop
+  automation.md          every trigger -> action, and what humans still do
+  build-guide.md         how to construct all of this, phase by phase
+  jira-sdd-mapping.md    Epic/Story/Task <-> OpenSpec, branch naming, the metric
+  roles/                 one page per role
+specifications/          shared OpenSpec store (submodule) — cross-cutting specs only
 src/
-  common/               shared contracts/types, published as a package
-  frontend/             \
-  backend/               |  each: own local openspec/specs + openspec/changes,
-  gitops_frontend/       |  plus a `references:` link to specifications/
-  gitops_backend/        |
-  nginx/                /
+  common/                shared contracts/types, published as a package
+  frontend/              \
+  backend/                |  each: own local openspec/specs + openspec/changes,
+  gitops_frontend/        |  plus a `references:` link to specifications/
+  gitops_backend/         |
+  nginx/                 /
+scripts/
+  setup-openspec.sh      registers the specifications store locally (idempotent)
+  add-repo.sh            promotes a src/<name> placeholder to a real submodule
+  sync.sh                pulls latest specifications + reports submodule status
+  check-sdd.sh           checks the "story followed SDD" metric
+  release-version.sh     next semver from conventional commits; tags; notes
+  jira-release.sh        creates the Jira version, stamps Fix Versions
+  jira-deploy.sh         deployment comment + Deployed Environments field
+  promote.sh             copies an image digest between GitOps overlays
+  lib/jira.sh            shared Jira REST helpers (Cloud and Server/DC)
+.github/workflows/       templates the app and gitops repos copy in
+  sdd-check.yml          the metric, in CI
+  pr-conventions.yml     conventional PR titles, branch names, key survival
+  release.yml            gate 7: version, tag, image, Fix Version
+  deploy.yml             gates 8 and 10: overlay, Argo, Jira, rollback
 ```
 
 `src/*` are currently **placeholders** (plain directories, no remote yet).
-Promote one to a real submodule with `scripts/add-repo.sh <name> <git-url>`
-once the real repo exists.
+Promote one with `scripts/add-repo.sh <name> <git-url>` once the real repo
+exists.
+
+## Source of truth
+
+Six questions, six answers, no duplication.
+
+| Question | Single source | Location |
+|---|---|---|
+| What does the system do **today**? | main specs | `<repo>/openspec/specs/`, `specifications/openspec/specs/` |
+| What are we changing **next**, and why? | proposal + spec deltas | `openspec/changes/<change-id>/` |
+| **How** will we build it? | design + tasks | same change dir |
+| **Who** does it, when, in which sprint? | Jira | Epic / Story / Task |
+| What is **actually built**? | code | the application repos |
+| What is **actually running**, where? | GitOps + tags | `gitops_*` overlays, `<service>-<semver>` tags |
+
+Jira never holds requirement text; specs never hold assignees or sprints. The
+only reference crossing the boundary is `.openspec.yaml: jira: PROJ-123` ↔ the
+Story's `change-id`.
+
+Behavior truth is deliberately **not** centralised. Specs live next to the code
+they describe so they're reviewed in the same commits; a single store holding
+every repo's specs stops being reviewed alongside the code and drifts within
+weeks. Only genuinely cross-cutting contracts go in the shared store.
+
+## Jira mapping (the short version)
+
+```
+1 Epic  = N stories                    a feature too big for one spec delta
+1 Story = 1 OpenSpec change            = 1 spec delta   <- SDD label + change-id here
+1 Task  = 1 repo = 1 branch = 1 PR     = 1 "## N. <Repo> (KEY)" section of tasks.md
+```
+
+**Tasks slice the landing, never the spec.** A story's tasks are its repo
+slices. The fix for a too-big story is an Epic, not more tasks. Full rules,
+branch naming and the metric definition:
+[`docs/jira-sdd-mapping.md`](./docs/jira-sdd-mapping.md).
 
 ## Three kinds of OpenSpec root
 
 1. **Local repo root** (`src/<name>/openspec/`) — each app repo owns its own
    `specs/` and `changes/`, committed and reviewed as part of that repo's
-   normal history. This is where repo-internal specs live: always current,
-   because they're in the same commits as the code they describe. No
-   registration needed — it's just the nearest `openspec/` when you're cd'd
-   into that repo.
+   history. No registration needed — it's just the nearest `openspec/` when
+   you're cd'd into that repo.
 2. **Shared store** (`specifications/`) — holds **only** cross-cutting
-   capabilities: contracts/interfaces more than one repo must agree on
-   (the API between frontend and backend, shared events, etc). Deliberately
-   kept small. Registered once per machine:
+   capabilities: contracts more than one repo must agree on. Deliberately
+   small. Registered once per machine:
    ```bash
    openspec store register <path-to-specifications-clone> --id specifications
    ```
-   Reachable from anywhere afterward via `--store specifications`, regardless
-   of current directory.
-3. **This workflow repo** — has no specs of its own; its
-   `openspec/config.yaml` (`store: specifications`) delegates entirely to the
-   shared store. Used for authoring proposals that need to read multiple real
-   repos at once.
+   Reachable from anywhere afterward via `--store specifications`.
+3. **This workflow repo** — has no specs of its own; its `openspec/config.yaml`
+   (`store: specifications`) delegates entirely to the shared store.
 
-## Two roles
+## Two working modes
 
-**Analytics / architects** work in *this* repo (Mode A): all submodules
-checked out side by side, so a proposal that spans frontend + backend +
-common can be scoped correctly. They author in `specifications` and never
-touch `src/*` code directly.
+**Mode A — cross-repo authoring.** Analytics, architects and tech leads work in
+*this* repo, all submodules checked out side by side, so a proposal spanning
+frontend + backend + common can be scoped correctly. They author in
+`specifications` and never touch `src/*` code.
 
-**Developers** work inside **one single app repo** (Mode B) — clone just
-`frontend`, or just `backend`, open your IDE/agent rooted there. You do not
-need this workflow repo or any other team's repo present on disk. Your repo's
-own `openspec/` is self-sufficient for anything local; `--store
-specifications` reaches shared/cross-repo changes without leaving your repo.
+**Mode B — implementation.** Developers and testers work inside **one single
+app repo**, IDE/agent rooted there. You do not need this workflow repo or any
+other team's repo on disk. Your repo's own `openspec/` is self-sufficient for
+local work; `--store specifications` reaches shared changes without leaving it.
 
 ## Where a change gets authored
 
-- **Touches only this repo's internals** (nothing another repo consumes
-  changes): propose and apply entirely inside the local repo —
-  `openspec change propose` with no `--store` flag. Never touches
-  `specifications`.
-- **Touches a contract another repo consumes** (frontend+backend, or
-  anything+common): the proposal (`proposal.md` + spec deltas, including the
-  contract delta) is authored in `specifications` — either from this workflow
-  repo (full read context across affected repos) or directly with `--store
-  specifications` from a single repo. Once approved, `tasks.md` is written
-  during the **Plan** step below (by a developer, not analytics) and split
-  into per-repo sections (`## Common`, `## Backend`, `## Frontend`, `##
-  GitOps`), gated so the contract section lands and is published *before* the
-  consuming sections start. Each affected repo's own local
-  `openspec/changes/` stays untouched by it — implementers reach the shared
-  change via `--store specifications`, never by duplicating it locally.
+- **Touches only this repo's internals** → propose and apply entirely inside
+  the local repo, no `--store` flag. Never touches `specifications`.
+- **Touches a contract another repo consumes** → `proposal.md` + spec deltas
+  are authored in `specifications`, by analytics. Once approved, `tasks.md` is
+  written by a developer at gate 5 and split into per-repo sections gated so
+  the contract section lands and publishes *before* the consuming sections
+  start. Each affected repo's own `openspec/changes/` stays untouched —
+  implementers reach the shared change via `--store specifications`, never by
+  duplicating it locally.
+
+The test: **does another repo have to change its code because of this?** If no,
+it's local.
 
 ## Propose vs. plan: who writes what
 
-`openspec propose` (and the bundled `/opsx-propose` flow) generates four
-artifacts by default: `proposal.md`, `specs/*.md`, `design.md`, `tasks.md`.
-Analytics should only ever produce the first two:
+`openspec propose` generates four artifacts by default. Analytics produces only
+the first two.
 
-- `proposal.md` (**why**) and `specs/*.md` (**what** — observable behavior,
-  requirements, scenarios) are the business change proposal. This is
-  legitimately analytics' scope — the schema's own instructions for `specs`
-  explicitly say to avoid class/function names, library choices, and
-  implementation steps.
-- `design.md` (**how** — architecture/technical decisions) and `tasks.md`
-  (the step-by-step implementation checklist, gated on `design`) require
-  knowledge of the actual codebase, its patterns, and its conventions.
-  Analytics doesn't have that context, so writing tasks.md themselves
-  produces a plan a developer would have to rewrite anyway. These are
-  authored by **the developer who will implement the change**, as
-  implementation prep, immediately before running apply.
+- `proposal.md` (**why**) and `specs/*.md` (**what** — observable behavior) are
+  the business change proposal. Legitimately analytics' scope; the schema's own
+  instructions for `specs` say to avoid class/function names, library choices
+  and implementation steps.
+- `design.md` (**how**) and `tasks.md` (the step-by-step checklist) require
+  knowledge of the actual codebase and its conventions. Written by **the
+  developer who will implement the change**, as implementation prep.
 
-This isn't just a convention to remember — `specifications/openspec/
-config.yaml` declares `rules:` for `design` and `tasks` that tell the agent
-to stop after `specs` when drafting the initial proposal, and to treat
-design/tasks as the implementing developer's job. It's also mechanically
-safe to split this way: `openspec validate` passes on a change containing
-only `proposal.md` + `specs/` (verified — `design`/`tasks` just show as
-"blocked"/"ready", not errors), so analytics can open and merge a PR against
-`specifications` with nothing more than the business proposal. `openspec
-status --change <id> --json` reports `isComplete: false` until tasks.md
-exists — that's expected and correct; it only means "not ready for apply
-yet," not "invalid."
+This is enforced, not just conventional: `openspec/config.yaml` in each repo
+and in `specifications` declares `rules:` for `design` and `tasks` telling the
+agent to stop after `specs` when drafting an initial proposal. It's also
+mechanically safe — `openspec validate` passes on a change containing only
+`proposal.md` + `specs/` (`design`/`tasks` show as "blocked"/"ready", not
+errors), so analytics can merge a PR with nothing more than the business
+proposal. `openspec status --change <id> --json` reports `isComplete: false`
+until `tasks.md` exists; that means "not ready for apply yet," not "invalid."
 
 ## Lifecycle
 
-1. **Propose** (analytics, this repo): `/opsx-propose` (or `openspec new
-   change <name>` + guided artifacts) against `specifications` — creates
-   `proposal.md` and spec deltas (including a contract delta if cross-repo).
-   Stop there — do not let it continue into `design.md`/`tasks.md` (see
-   "Propose vs. plan" above). Push a branch, open a PR against
-   `specifications`.
-2. **Review/approve**: tech lead / product reviews the PR in
-   `specifications`, with extra scrutiny on the contract delta — frontend and
-   backend will build against it independently afterward. Merge to `main`.
-3. **Plan** (developer, before touching code): whoever will implement the
-   change creates `design.md` (if warranted — cross-cutting change, new
-   dependency, migration complexity) and `tasks.md`, informed by the real
-   codebase and its conventions:
-   ```bash
-   openspec instructions design --change <change-id> --store specifications --json
-   openspec instructions tasks  --change <change-id> --store specifications --json
-   ```
-   For a cross-repo change, `tasks.md` is split into per-repo sections (`##
-   Common`, `## Backend`, `## Frontend`, `## GitOps`), gated so the contract
-   section lands and is published *before* the consuming sections start.
-   Push this planning commit to `specifications` (a lightweight review here
-   catches a wrong technical approach, or wrong per-repo task gating, before
-   anyone starts coding).
-4. **Apply — common first, if a contract is involved**: the `common`
-   developer implements and publishes the contract per its `tasks.md`
-   section. Ships as a versioned package release.
-5. **Apply — frontend & backend in parallel**: each developer, inside their
-   own single repo, pulls the new `common` package version and implements
-   their `tasks.md` section. To check shared status without leaving their
-   repo:
-   ```bash
-   openspec list --store specifications
-   openspec show <change-id> --store specifications
-   openspec status --change <change-id> --store specifications --json
-   ```
-   Their repo's `references:` entry also surfaces the contract's current spec
-   summary ambiently during `apply`.
-6. **Archive** (once merged/deployed): `/opsx-archive <change-id>` (or
-   `openspec archive <change-id> --store specifications`) — moves the change
-   to `changes/archive/` and updates `specifications/openspec/specs/*` to
-   reflect new canonical truth. PR against `specifications`.
+The eleven gates, their owners, and their pass conditions are in
+[`docs/pipeline.md`](./docs/pipeline.md). In brief — **shape** (1–4), **build**
+(5–6), **ship** (7–11):
+
+1. **Intake** (team lead) — route the work to its
+   [lane](./docs/work-types.md), size the story per the rule, label `SDD`,
+   reserve a `change-id`, create per-repo tasks.
+2. **Propose** (analytics) — `/sdd:intake`: `proposal.md` + spec deltas. Stop
+   before design/tasks. PR against the right root.
+3. **Scenario review** (tester) — `/sdd:qa-review`: harden WHEN/THEN, add the
+   unhappy paths.
+4. **Approve** (tech lead) — extra scrutiny on the contract delta. Merge to
+   `main`. **No branch may exist before this merge.**
+5. **Plan** (developer) — `/sdd:plan`: `design.md` (if warranted) + `tasks.md`
+   with one Jira-keyed section per repo, contract section gated first.
+6. **Apply** (developer) — contract/`common` section first and published, then
+   frontend and backend in parallel. `/opsx:apply`. Squash-merge.
+7. **Release** (⚙ automated) — version from conventional commits, tag, image,
+   release notes, Jira Fix Version stamped.
+8. **Deploy to dev** (⚙ automated) — GitOps overlay updated, Argo syncs, the
+   ticket comments itself and the card moves.
+9. **Verify** (tester) — every scenario exercised against the **deployed dev
+   environment**; one card move to `Ready to release`.
+10. **Promote** (⚙ to staging, tech lead to prod) — the verified digest is
+    copied between overlays. The approval is about *when*, not *what*.
+11. **Archive** (analytics or last dev) — once **all** consuming repos are in
+    production: `/opsx:archive <id> --store specifications`.
+
+Gates 7, 8 and the staging half of 10 involve no human at all. See
+[`docs/release.md`](./docs/release.md) and
+[`docs/automation.md`](./docs/automation.md).
+
+Not every lane uses every gate: bugs and refactors skip 2–4, hotfixes invert
+the order and owe a retro-spec, chores skip almost everything. The rules are in
+[`docs/work-types.md`](./docs/work-types.md).
+
+## Checking the metric
+
+```bash
+make check           # this root
+make check-shared    # the shared specifications store
+```
+
+`scripts/check-sdd.sh` asserts the `jira:` link, `openspec validate`, Jira keys
+on every `tasks.md` section, the branch naming pattern, and that the proposal
+was merged before the branch was cut. Export `JIRA_URL` and `JIRA_TOKEN` to
+also assert the `SDD` label and issue type. `.github/workflows/sdd-check.yml`
+is a template for the app repos to copy.
+
+## The Scrum layer
+
+Gate 4 forbids a branch before the spec is merged, which plain one-track Scrum
+cannot satisfy. The fix is **dual-track**: discovery (gates 1–4) runs one sprint
+ahead of delivery (gates 5–11), so by the time a developer starts, the spec has
+been merged for a week. Boards, DoR/DoD, estimation, capacity and ceremonies:
+[`docs/scrum.md`](./docs/scrum.md).
+
+## Release
+
+Trunk-based, release on merge, per-service semver derived from conventional
+commits, build once and promote the digest. `main` merge → tag
+`<service>-<semver>` → image → Jira Fix Version `<service> <semver>` → dev →
+verify → staging → prod on one approval. Every step is in
+[`docs/release.md`](./docs/release.md); every trigger and secret is in
+[`docs/automation.md`](./docs/automation.md); the order to build it in is
+[`docs/build-guide.md`](./docs/build-guide.md).
 
 ## Why `common` is a package, not a submodule of frontend/backend
 
-Submoduling `common` into both `frontend` and `backend` would force them into
-lockstep — every `common` change would require both to bump a pointer before
-either could build, defeating parallel development. Instead, `common` is
-versioned and published to an internal package registry; frontend and backend
-depend on it as an ordinary pinned package version, upgraded independently
-and deliberately on each side. `common` is still a submodule *of this
-workflow repo*, for visibility while authoring proposals — just not of
-frontend or backend.
+Submoduling `common` into both would force them into lockstep — every `common`
+change would require both to bump a pointer before either could build,
+defeating parallel development. Instead `common` is versioned and published to
+an internal registry; frontend and backend depend on a pinned version and
+upgrade independently. `common` is a submodule *of this workflow repo* only,
+for read context while authoring proposals.
 
 ## Cross-repo working views (Mode A tooling)
 
-While authoring a proposal that spans repos, use the CLI's own composition
-tools instead of manually juggling directories:
-
 ```bash
-openspec workset create <name>        # compose a saved view of the affected src/* repos
-openspec context --code-workspace ws.code-workspace   # combined VS Code workspace for a change
+openspec workset create <name>                        # saved view of the affected src/* repos
+openspec context --code-workspace ws.code-workspace   # combined VS Code workspace
 ```
 
 ## Submodule update policy
 
-- `specifications`: tracked branch, bumped often (`make sync` /
-  `scripts/sync.sh`, wraps `git submodule update --remote --merge`).
-- Real dev-repo submodules (once added via `scripts/add-repo.sh`): pinned to
-  explicit commits, bumped deliberately via PR — this pinned combination is
-  what release/gitops tooling reads, separate from what individual
-  developers are doing day to day in their own repos.
+- `specifications`: tracked branch, bumped often (`make sync`).
+- Real dev-repo submodules: pinned to explicit commits, bumped deliberately via
+  PR — this pinned combination is what release/gitops tooling reads, separate
+  from what individual developers do day to day.
+
+## Building this from scratch
+
+Nine phases, roughly two weeks of setup plus one sprint of adoption, in
+[`docs/build-guide.md`](./docs/build-guide.md). Two rules about order: build
+the feedback loop (phases 1–7) **before** changing how people work (phase 8),
+and pilot with one service and one squad before rolling out.
 
 ## AI tool commands
 
-Both Qwen (`.qwen/commands/opsx-*`) and Claude Code
-(`.claude/commands/opsx-*`) slash commands are available in `specifications/`
-and at this repo's root: `/opsx-propose`, `/opsx-apply`, `/opsx-archive`,
-`/opsx-sync`, `/opsx-explore`, `/opsx-update`.
+Role-scoped SDD commands (this repo, `.claude/commands/sdd/`):
+`/sdd:intake`, `/sdd:plan`, `/sdd:qa-review`, `/sdd:gate`.
+
+Underlying OpenSpec commands, available here and in `specifications/` for both
+Claude Code and Qwen: `/opsx:propose`, `/opsx:apply`, `/opsx:archive`,
+`/opsx:sync`, `/opsx:explore`, `/opsx:update`.

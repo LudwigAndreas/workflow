@@ -1,0 +1,198 @@
+# Deploy and promote — gates 8 and 10.
+#
+# TEMPLATE for the GitOps repos (gitops_backend, gitops_frontend).
+#
+# Two jobs, because promotion and observation happen at different moments:
+#
+#   promote   writes a digest into an overlay.
+#             dev/staging land directly on main; prod opens a PR instead, so
+#             the one-line digest change is reviewable and audited, and the
+#             job stops there.
+#   observe   runs on every push to main that touched an overlay - which
+#             covers both the direct pushes and the merged prod PR. It waits
+#             for Argo, then tells Jira, then rolls back if unhealthy.
+#
+# Splitting them is what makes the prod path correct: nothing waits on a sync
+# that a human has not approved yet.
+#
+# Required repo configuration
+#   vars.JIRA_URL / vars.JIRA_PROJECT / vars.JIRA_EMAIL
+#   vars.WORKFLOW_REPO                  your-org/workflow
+#   vars.JIRA_FIELD_DEPLOYED_ENVS       customfield_10042
+#   vars.ARGOCD_SERVER                  argocd.internal
+#   secrets.JIRA_TOKEN / secrets.ARGOCD_TOKEN / secrets.WORKFLOW_TOKEN
+
+name: Deploy
+
+on:
+  repository_dispatch:
+    types: [deploy, verified]
+  workflow_dispatch:
+    inputs:
+      service:
+        description: Service to promote
+        required: true
+      version:
+        description: Version already running in the source environment
+        required: true
+      to:
+        description: Target environment
+        default: prod
+        type: choice
+        options: [staging, prod]
+  push:
+    branches: [main]
+    paths: ['apps/**/overlays/**']
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  # ------------------------------------------------------------------ promote
+  promote:
+    if: github.event_name != 'push'
+    runs-on: ubuntu-latest
+    env:
+      SERVICE: ${{ github.event.client_payload.service || github.event.inputs.service }}
+      VERSION: ${{ github.event.client_payload.version || github.event.inputs.version }}
+      DIGEST: ${{ github.event.client_payload.digest }}
+      TO: ${{ github.event.inputs.to || (github.event.action == 'verified' && 'staging' || 'dev') }}
+      FROM: ${{ github.event.action == 'verified' && 'dev' || (github.event.inputs.to == 'prod' && 'staging' || '') }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/checkout@v4
+        with:
+          repository: ${{ vars.WORKFLOW_REPO }}
+          path: .workflow
+          token: ${{ secrets.WORKFLOW_TOKEN }}
+
+      - name: Install yq
+        run: |
+          sudo wget -qO /usr/local/bin/yq \
+            https://github.com/mikefarah/yq/releases/latest/download/yq_linux_amd64
+          sudo chmod +x /usr/local/bin/yq
+
+      - name: Write the overlay
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          git config user.name  "deploy-bot"
+          git config user.email "deploy-bot@users.noreply.github.com"
+
+          args=(--service "$SERVICE" --to "$TO")
+          if [ -n "$FROM" ]; then
+            args+=(--from "$FROM")
+          else
+            args+=(--digest "$DIGEST" --version "$VERSION")
+          fi
+
+          if [ "$TO" = "prod" ]; then
+            # opens a PR and stops - the merge is gate 10, and merging it
+            # fires the observe job below
+            .workflow/scripts/promote.sh "${args[@]}" --pr
+          else
+            .workflow/scripts/promote.sh "${args[@]}" --push
+          fi
+
+  # ------------------------------------------------------------------ observe
+  observe:
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/checkout@v4
+        with:
+          repository: ${{ vars.WORKFLOW_REPO }}
+          path: .workflow
+          token: ${{ secrets.WORKFLOW_TOKEN }}
+
+      - name: Read what was promoted
+        id: ctx
+        run: |
+          # scripts/promote.sh writes these trailers; a push without them is
+          # a hand-edited overlay and there is nothing to report to Jira.
+          msg="$(git log -1 --format=%B)"
+          get() { printf '%s' "$msg" | grep -m1 "^$1: " | cut -d' ' -f2-; }
+          {
+            echo "service=$(get Promote-Service)"
+            echo "version=$(get Promote-Version)"
+            echo "env=$(get Promote-Env)"
+            echo "digest=$(get Promote-Digest)"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Wait for Argo CD to report healthy
+        id: sync
+        if: steps.ctx.outputs.service != ''
+        run: |
+          app="${{ steps.ctx.outputs.service }}-${{ steps.ctx.outputs.env }}"
+          for _ in $(seq 1 60); do
+            state="$(curl -sS -H "Authorization: Bearer ${{ secrets.ARGOCD_TOKEN }}" \
+              "https://${{ vars.ARGOCD_SERVER }}/api/v1/applications/${app}" \
+              | jq -r '"\(.status.sync.status)/\(.status.health.status)"')"
+            echo "argocd: $app -> $state"
+            case "$state" in
+              Synced/Healthy) exit 0 ;;
+              */Degraded)     echo "::error::$app is Degraded"; exit 1 ;;
+            esac
+            sleep 15
+          done
+          echo "::error::$app did not become healthy within 15 minutes"
+          exit 1
+
+      - name: Tell Jira it is live
+        if: success() && steps.ctx.outputs.service != ''
+        env:
+          JIRA_URL: ${{ vars.JIRA_URL }}
+          JIRA_EMAIL: ${{ vars.JIRA_EMAIL }}
+          JIRA_PROJECT: ${{ vars.JIRA_PROJECT }}
+          JIRA_TOKEN: ${{ secrets.JIRA_TOKEN }}
+          JIRA_FIELD_DEPLOYED_ENVS: ${{ vars.JIRA_FIELD_DEPLOYED_ENVS }}
+          ENV_NAME: ${{ steps.ctx.outputs.env }}
+        run: |
+          # Issue keys resolve from the Fix Version stamped at gate 7, so this
+          # repo needs none of the application's git history.
+          transition=""
+          [ "$ENV_NAME" = "dev" ] && transition="Deployed to dev"
+          .workflow/scripts/jira-deploy.sh \
+            --service "${{ steps.ctx.outputs.service }}" \
+            --version "${{ steps.ctx.outputs.version }}" \
+            --env "$ENV_NAME" \
+            --digest "${{ steps.ctx.outputs.digest }}" \
+            --url "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" \
+            ${transition:+--transition "$transition"}
+
+      - name: Mark the Jira version Released
+        if: success() && steps.ctx.outputs.env == 'prod'
+        env:
+          JIRA_URL: ${{ vars.JIRA_URL }}
+          JIRA_EMAIL: ${{ vars.JIRA_EMAIL }}
+          JIRA_PROJECT: ${{ vars.JIRA_PROJECT }}
+          JIRA_TOKEN: ${{ secrets.JIRA_TOKEN }}
+        run: |
+          .workflow/scripts/jira-release.sh \
+            --service "${{ steps.ctx.outputs.service }}" \
+            --version "${{ steps.ctx.outputs.version }}" \
+            --release
+
+      # ---------------------------------------------------------------- rollback
+      - name: Roll back on failure
+        if: failure() && steps.sync.outcome == 'failure'
+        env:
+          JIRA_URL: ${{ vars.JIRA_URL }}
+          JIRA_EMAIL: ${{ vars.JIRA_EMAIL }}
+          JIRA_PROJECT: ${{ vars.JIRA_PROJECT }}
+          JIRA_TOKEN: ${{ secrets.JIRA_TOKEN }}
+          JIRA_FIELD_DEPLOYED_ENVS: ${{ vars.JIRA_FIELD_DEPLOYED_ENVS }}
+        run: |
+          git config user.name  "deploy-bot"
+          git config user.email "deploy-bot@users.noreply.github.com"
+          git revert --no-edit HEAD
+          git push
+          .workflow/scripts/jira-deploy.sh \
+            --service "${{ steps.ctx.outputs.service }}" \
+            --version "${{ steps.ctx.outputs.version }}" \
+            --env "${{ steps.ctx.outputs.env }}" --rollback \
+            --url "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
