@@ -6,6 +6,10 @@ Reference/starter configuration for enterprise, spec-driven development across
 a multirepo application, using [OpenSpec](https://github.com/Fission-AI/OpenSpec)
 and mapped onto an Agile/Scrum Jira board.
 
+Built for **Bitbucket Data Center + Jenkins + Argo CD**. The Jenkins pipelines
+live here as a shared library (`vars/`); each repo carries a five-line
+`Jenkinsfile`.
+
 **Start here: [`docs/pipeline.md`](./docs/pipeline.md)** — one diagram, six
 roles, eleven gates in three phases, and the answer to "where is the source of
 truth".
@@ -92,18 +96,19 @@ scripts/
   release-version.sh next semver from conventional commits; tags; release notes
   jira-release.sh    creates the Jira version, stamps Fix Versions
   jira-deploy.sh     deploy comment + "Deployed Environments" field
-  promote.sh         copies an image digest between GitOps overlays
-.github/workflows/   templates for the app and gitops repos to copy
-  sdd-check.yml      the SDD metric, in CI
-  pr-conventions.yml conventional PR titles, branch names, Jira key survival
-  release.yml        gate 7 — version, tag, image, Fix Version
-  deploy.yml         gates 8 and 10 — overlay, Argo, Jira, rollback
+  promote.sh         copies an image digest between Argo CD overlays
+vars/                Jenkins shared library — the pipelines
+  sddRelease.groovy  gate 7 — version, tag, image, Fix Version
+  sddPromote.groovy  gate 10 — overlay write, Bitbucket PR for prod
+  sddObserve.groovy  gate 8 — Argo health, Jira feedback, rollback
+  sddPrChecks.groovy conventional PR titles, branch names, Jira key survival
+examples/            thin Jenkinsfiles each repo copies in
 ```
 
 Promote a placeholder once its real repo exists:
 
 ```bash
-scripts/add-repo.sh frontend git@github.com:your-org/frontend.git
+scripts/add-repo.sh frontend ssh://git@bitbucket.acme.com/plat/frontend.git
 ```
 
 ## The SDD metric
@@ -125,14 +130,16 @@ JIRA_URL=... JIRA_TOKEN=... make check       # also assert the label via Jira
 Merge a PR and nothing else is asked of you:
 
 ```
-squash merge to main
+squash merge to main in Bitbucket
+  -> Jenkins sddRelease
   -> version from conventional commits      backend 1.4.2 -> 1.5.0
   -> annotated tag + immutable image        backend-1.5.0
   -> Jira version "backend 1.5.0" created, Fix Version stamped on PROJ-123
-  -> GitOps dev overlay updated, Argo syncs
+  -> Argo CD repo dev overlay updated, Argo syncs
   -> 🚀 "Deployed to dev — backend 1.5.0" commented on the ticket
   -> story rolls up to Verifying, the tester is notified
-  -> tester passes -> staging automatically -> prod on one approval
+  -> tester passes -> staging automatically
+  -> prod: one Bitbucket pull request, one approval, one merge
   -> Jira version marked Released, story Done
 ```
 

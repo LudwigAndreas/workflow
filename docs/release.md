@@ -87,10 +87,11 @@ session cookie. Implements the "SSO callback" requirement.
 PROJ-125
 ```
 
-The Jira key is appended to the PR body automatically from the branch name by
-[`.github/workflows/pr-conventions.yml`](../.github/workflows/pr-conventions.yml)
-if the author forgets, so it is a convention with a safety net rather than a
-rule people fail.
+In Bitbucket the squash commit is built from the pull request **title and
+description**, so the Jira key has to be in one of them. If the author forgets,
+[`sddPrChecks`](../vars/sddPrChecks.groovy) appends it to the description from
+the branch name — a convention with a safety net rather than a rule people
+fail.
 
 ### Tags and images
 
@@ -115,7 +116,7 @@ flowchart TD
     V --> T["Create annotated tag<br/><code>backend-1.5.0</code>"]
     T --> B["Build + test + scan<br/>push image by digest"]
     B --> J1["<b>Jira: release</b><br/>create version 'backend 1.5.0'<br/>set Fix Version on every key in range"]
-    T --> N["Generate changelog<br/>+ GitHub release notes"]
+    T --> N["Generate changelog<br/>into the tag + Jira version"]
     B --> G["Open GitOps PR<br/>dev overlay → new digest<br/><i>auto-merged</i>"]
     G --> A["Argo CD syncs <code>dev</code>"]
     A --> H{"Healthy?"}
@@ -134,9 +135,11 @@ Wall-clock target, merge to running in dev: **under 15 minutes.** If it is
 longer than that, developers stop trusting dev and start testing on their
 laptops, and the whole feedback loop this pipeline exists to create disappears.
 
-Implementation: [`.github/workflows/release.yml`](../.github/workflows/release.yml),
+Implementation: [`vars/sddRelease.groovy`](../vars/sddRelease.groovy),
 [`scripts/release-version.sh`](../scripts/release-version.sh),
-[`scripts/jira-release.sh`](../scripts/jira-release.sh).
+[`scripts/jira-release.sh`](../scripts/jira-release.sh). The pipeline is a
+Jenkins shared library; each repo carries a five-line `Jenkinsfile` — see
+[`examples/Jenkinsfile.app`](../examples/Jenkinsfile.app).
 
 ## Environments and promotion
 
@@ -183,7 +186,8 @@ what has already been verified.
 ## The Jira feedback loop
 
 This is the part that makes the whole system legible to people who never open
-GitHub. It has three layers, and they are written by two scripts.
+Bitbucket or Jenkins. It has three layers, and they are written by two
+scripts.
 
 ### Layer 1 — Fix Version, set at tag time
 
@@ -251,8 +255,10 @@ asking a developer, no release spreadsheet.
 
 Generated twice, for two audiences, from the same data:
 
-- **Technical**, per service, per tag: the conventional-commit changelog, in the
-  GitHub release. Grouped by type, with Jira keys linked.
+- **Technical**, per service, per tag: the conventional-commit changelog.
+  Bitbucket Data Center has no Releases feature, so it lives in two places that
+  do exist — the **annotated tag message**, and the **description of the Jira
+  version**. Jenkins also archives it as a build artifact.
 - **Product**, per production promotion: the set of Jira issues whose Fix
   Versions became Released, grouped by Epic, using issue summaries rather than
   commit subjects. Posted to the release channel and attached to the Jira

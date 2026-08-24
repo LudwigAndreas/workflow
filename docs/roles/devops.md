@@ -43,10 +43,17 @@ Two numbers say whether you are winning:
 
 Both are workflows, not activities. Your job is that they are true.
 
-| Gate | File | What it must guarantee |
+| Gate | Pipeline | What it must guarantee |
 |---|---|---|
-| 7 Release | [`release.yml`](../../.github/workflows/release.yml) | one merge → one version, one tag, one immutable image, Fix Versions stamped |
-| 8 Deploy | [`deploy.yml`](../../.github/workflows/deploy.yml) | the overlay is written, Argo is healthy, the ticket says so |
+| 7 Release | [`sddRelease`](../../vars/sddRelease.groovy) | one merge → one version, one tag, one immutable image, Fix Versions stamped |
+| 8 Deploy | [`sddPromote`](../../vars/sddPromote.groovy) + [`sddObserve`](../../vars/sddObserve.groovy) | the overlay is written, Argo is healthy, the ticket says so |
+| — PR gate | [`sddPrChecks`](../../vars/sddPrChecks.groovy) | conventional titles, branch names, the SDD metric, a Bitbucket build status |
+
+**This repo is the Jenkins shared library.** `vars/` is the library; each
+application and Argo CD repo carries a five-line `Jenkinsfile` from
+[`examples/`](../../examples). A pipeline fix is one commit here — which is the
+whole reason for the shared-library layout, and why you should resist anyone
+pasting a pipeline into a single repo "just this once".
 
 The scripts underneath are deliberately plain bash so they can be run by hand
 when a pipeline is down:

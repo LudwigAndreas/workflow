@@ -40,12 +40,24 @@ scripts/
   jira-deploy.sh         deployment comment + Deployed Environments field
   promote.sh             copies an image digest between GitOps overlays
   lib/jira.sh            shared Jira REST helpers (Cloud and Server/DC)
-.github/workflows/       templates the app and gitops repos copy in
-  sdd-check.yml          the metric, in CI
-  pr-conventions.yml     conventional PR titles, branch names, key survival
-  release.yml            gate 7: version, tag, image, Fix Version
-  deploy.yml             gates 8 and 10: overlay, Argo, Jira, rollback
+  lib/bitbucket.sh       Bitbucket Data Center REST helpers
+vars/                    Jenkins shared library - the pipelines themselves
+  sddRelease.groovy      gate 7: version, tag, image, Fix Version
+  sddPromote.groovy      gate 10 + the write half of 8: overlay, Bitbucket PR
+  sddObserve.groovy      gate 8: Argo health, Jira feedback, rollback
+  sddPrChecks.groovy     conventional PR titles, branch names, key survival
+  sddScripts.groovy      puts scripts/ on the agent for the pipelines
+examples/                thin Jenkinsfiles each repo copies in
+  Jenkinsfile.app        application repos
+  Jenkinsfile.gitops     the Argo CD repo, observe job
+  Jenkinsfile.promote    the Argo CD repo, promote job
 ```
+
+CI/CD is **Bitbucket Data Center + Jenkins + Argo CD**. This repo doubles as
+the Jenkins shared library: `vars/` is at the root because that is where
+Jenkins looks. Jenkins also adds `src/` to the library classpath and finds no
+Groovy there, which is harmless - `src/` remains the application-repo
+placeholders.
 
 `src/*` are currently **placeholders** (plain directories, no remote yet).
 Promote one with `scripts/add-repo.sh <name> <git-url>` once the real repo
@@ -199,8 +211,8 @@ make check-shared    # the shared specifications store
 `scripts/check-sdd.sh` asserts the `jira:` link, `openspec validate`, Jira keys
 on every `tasks.md` section, the branch naming pattern, and that the proposal
 was merged before the branch was cut. Export `JIRA_URL` and `JIRA_TOKEN` to
-also assert the `SDD` label and issue type. `.github/workflows/sdd-check.yml`
-is a template for the app repos to copy.
+also assert the `SDD` label and issue type. It runs on every pull request via
+`sddPrChecks` - see [`examples/Jenkinsfile.app`](./examples/Jenkinsfile.app).
 
 ## The Scrum layer
 
@@ -213,9 +225,10 @@ been merged for a week. Boards, DoR/DoD, estimation, capacity and ceremonies:
 ## Release
 
 Trunk-based, release on merge, per-service semver derived from conventional
-commits, build once and promote the digest. `main` merge → tag
-`<service>-<semver>` → image → Jira Fix Version `<service> <semver>` → dev →
-verify → staging → prod on one approval. Every step is in
+commits, build once and promote the digest. `main` merge → Jenkins `sddRelease`
+→ tag `<service>-<semver>` → image → Jira Fix Version `<service> <semver>` →
+Argo CD repo → dev → verify → staging → prod on one merged Bitbucket pull
+request. Every step is in
 [`docs/release.md`](./docs/release.md); every trigger and secret is in
 [`docs/automation.md`](./docs/automation.md); the order to build it in is
 [`docs/build-guide.md`](./docs/build-guide.md).

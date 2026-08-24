@@ -36,7 +36,7 @@
 | [9](#фаза-9--метрики) | DORA + соблюдение SDD | 4 ч | нет |
 
 Фазы 6–9 помечены неблокирующими, потому что пайплайн работает и без них — но
-именно на 6-й процесс становится видимым людям, никогда не открывающим GitHub,
+именно на 6-й процесс становится видимым людям, никогда не открывающим Jenkins,
 а это и есть большая часть ценности, так что не останавливайтесь на 5-й.
 
 ---
@@ -73,8 +73,8 @@
 1. Создайте общее хранилище и зарегистрируйте его один раз на машину:
 
    ```bash
-   gh repo create your-org/specifications --private
-   git clone git@github.com:your-org/specifications.git ~/dev/specifications
+   # сначала создайте репозиторий в Bitbucket (Projects -> ваш проект -> Create repository)
+   git clone ssh://git@bitbucket.acme.com/plat/specifications.git ~/dev/specifications
    cd ~/dev/specifications && openspec init
    openspec store register ~/dev/specifications --id specifications
    openspec store list --json     # проверка
@@ -97,8 +97,8 @@
    межрепозиторный контекст:
 
    ```bash
-   scripts/add-repo.sh backend git@github.com:your-org/backend.git
-   scripts/add-repo.sh frontend git@github.com:your-org/frontend.git
+   scripts/add-repo.sh backend  ssh://git@bitbucket.acme.com/plat/backend.git
+   scripts/add-repo.sh frontend ssh://git@bitbucket.acme.com/plat/frontend.git
    make init && make doctor
    ```
 
@@ -133,8 +133,11 @@
      "Spec approval", Ready)`.
    - *Delivery*, фильтр `status in (Ready, "In progress", ...)`, дорожки по
      Epic'ам.
-6. **Свяжите Jira с GitHub** — официальным приложением GitHub for Jira. Именно
-   оно вообще позволяет событиям веток и PR двигать карточки.
+6. **Свяжите Jira с Bitbucket.** Создайте **Application Link** между ними
+   (Jira → Settings → Applications → Application links), затем включите
+   синхронизацию **DVCS accounts** для проекта. Именно это вообще позволяет
+   событиям веток и pull request двигать карточки — без этого правила 1–3
+   никогда не сработают, и вы снова таскаете карточки руками.
 7. **Заведите бот-аккаунт** и его API-токен. Права: переводить задачи,
    редактировать задачи, добавлять комментарии, управлять версиями. Больше
    ничего.
@@ -158,20 +161,25 @@
    не на те задачи.
 2. Установите шаблон сообщения squash-коммита в **«Pull request title and
    description»**.
-3. Скопируйте два проверочных workflow:
+3. Положите в репозиторий `Jenkinsfile` из
+   [`examples/Jenkinsfile.app`](../examples/Jenkinsfile.app) и заведите на него
+   джобу **Multibranch Pipeline**. На pull request она гоняет `sddPrChecks`, на
+   `main` — `sddRelease` (фаза 4).
 
-   ```bash
-   cp .github/workflows/pr-conventions.yml <app-repo>/.github/workflows/
-   cp .github/workflows/sdd-check.yml      <app-repo>/.github/workflows/
-   ```
+4. **Branch permissions** на `main` (Repository settings → Branch permissions):
+   *Prevent changes without a pull request*, один подтверждающий, прямые пуши
+   запрещены — **включая админов**. Обход админом используется ровно один раз,
+   а потом навсегда.
 
-4. Branch protection на `main`: обе проверки обязательны, одно подтверждающее
-   ревью, прямые пуши запрещены — **включая админов**. Обход админом
-   используется ровно один раз, а потом навсегда.
+5. **Merge checks** (Repository settings → Merge checks): требовать зелёный
+   build status `sdd-pr-checks`. `sddPrChecks` отправляет его через
+   build-status API Bitbucket — так Jenkins блокирует влитие без
+   GitHub-подобных required checks.
 
-**Готово, когда:** PR с заголовком `wip` падает, а PR с заголовком
-`feat(auth): add SSO callback` в ветке `PROJ-2-sso` проходит, и ключ
-автоматически дописан в его тело.
+**Готово, когда:** pull request с заголовком `wip` падает, а с заголовком
+`feat(auth): add SSO callback` в ветке `PROJ-2-sso` проходит, ключ
+автоматически дописан в его **описание**, а Bitbucket показывает
+`sdd-pr-checks` как обязательный и зелёный.
 
 **Пропустите — и:** фаза 4 выдаст неверные версии и неверные Fix Version, и вы
 не заметите этого неделями.
@@ -182,24 +190,34 @@
 
 **Цель:** каждое влитие в `main` даёт версию, тег и образ без участия человека.
 
-1. Скопируйте релизный workflow и задайте имя сервиса:
+1. **Зарегистрируйте этот репозиторий общей библиотекой Jenkins**: Manage
+   Jenkins → System → Global Pipeline Libraries. Имя `sdd-workflow`, версия по
+   умолчанию `main`, источник — этот репозиторий в Bitbucket. Разрешите
+   переопределять версию, чтобы репозиторий мог зафиксировать `@v1`, пока вы
+   развиваете `@main`.
 
-   ```bash
-   cp .github/workflows/release.yml <app-repo>/.github/workflows/
-   sed -i '' 's/SERVICE: backend/SERVICE: <your-service>/' \
-     <app-repo>/.github/workflows/release.yml
+2. Задайте **глобальное окружение** и **учётные данные** Jenkins из
+   [инвентаря конфигурации](./automation.ru.md#инвентарь-конфигурации). Это
+   делается один раз на весь контроллер, а не на каждый репозиторий — главное
+   практическое преимущество перед workflow-файлами по репозиториям.
+
+3. В `Jenkinsfile` репозитория приложения задайте сервис, реестр и имя
+   promote-джобы его репозитория Argo CD:
+
+   ```groovy
+   @Library('sdd-workflow@main') _
+   sddRelease(service: 'backend',
+              registry: 'registry.acme.com/platform',
+              gitopsJob: 'gitops/backend-promote')
    ```
-
-2. Задайте переменные и секреты из
-   [инвентаря конфигурации](./automation.ru.md#инвентарь-конфигурации).
-3. **Поставьте первый тег руками**, чтобы у вычисления версии была база:
+4. **Поставьте первый тег руками**, чтобы у вычисления версии была база:
 
    ```bash
    git tag -a backend-1.0.0 -m "baseline before automated releases"
    git push origin backend-1.0.0
    ```
 
-4. Прогоните вхолостую до включения:
+5. Прогоните вхолостую до включения:
 
    ```bash
    scripts/release-version.sh --service backend
@@ -207,9 +225,15 @@
    scripts/jira-release.sh --service backend --version 1.0.1 --dry-run
    ```
 
-**Готово, когда:** влитие PR с заголовком `fix(x): y` даёт тег `backend-1.0.1`,
-GitHub release с notes и образ, запушенный по digest, — и вы нигде не набирали
-`1.0.1`.
+**Готово, когда:** влитие pull request с заголовком `fix(x): y` даёт тег
+`backend-1.0.1`, release notes в версии Jira `backend 1.0.1` и образ,
+запушенный по digest, — и вы нигде не набирали `1.0.1`.
+
+**Ловушка, которой стоит избежать:** Jenkins по умолчанию клонирует shallow, а
+вычисление версии читает все теги. `sddRelease` принудительно ставит
+`CloneOption(shallow: false, noTags: false)` именно поэтому. Если ваша джоба
+переопределяет checkout — сохраните эту опцию, иначе каждый релиз будет
+вычисляться как `0.0.1`.
 
 ---
 
@@ -231,20 +255,25 @@ GitHub release с notes и образ, запушенный по digest, — и 
    [почему](./release.ru.md#теги-и-образы).
 
 2. Создайте по одному приложению Argo CD на сервис на окружение с именем
-   `<service>-<env>` (`deploy.yml` опрашивает именно это имя). Auto-sync
+   `<service>-<env>` (`sddObserve` опрашивает именно это имя). Auto-sync
    **включён** для `dev` и `staging`, **выключен** для `prod` — прод
-   синхронизируется при влитии своего PR.
+   синхронизируется при влитии своего pull request.
 
-3. Скопируйте workflow выкатки и задайте его переменные:
+3. Заведите **две джобы Jenkins** на сервис против репозитория Argo CD:
 
-   ```bash
-   cp .github/workflows/deploy.yml <gitops-repo>/.github/workflows/
-   ```
+   - `gitops/<service>-observe` — Multibranch по `main`, на основе
+     [`examples/Jenkinsfile.gitops`](../examples/Jenkinsfile.gitops).
+   - `gitops/<service>-promote` — Pipeline с параметрами на основе
+     [`examples/Jenkinsfile.promote`](../examples/Jenkinsfile.promote).
+     Поставьте галку **Trigger builds remotely**, чтобы в фазе 7 её могла
+     запускать Jira.
 
-4. Защитите продовый оверлей:
-   [`CODEOWNERS` + branch protection](./automation.ru.md#защита-продового-оверлея)
-   на `apps/*/overlays/prod/**`. `dev` и `staging` защищать не нужно — они
-   должны двигаться постоянно.
+4. Защитите продовый оверлей
+   [branch permissions и merge checks Bitbucket](./automation.ru.md#защита-продового-оверлея).
+   В Bitbucket Data Center нет `CODEOWNERS`, поэтому шлюз работает на уровне
+   репозитория — и это нормально, потому что репозитории Argo CD и так
+   разделены по сервисам. `dev` и `staging` защищать не нужно, они должны
+   двигаться постоянно.
 
 5. Определите health честно. Readiness-проба, отдающая 200, — это не здоровье:
    Argo должен видеть, что ворклоад реально обслуживает. Плохие определения
@@ -296,9 +325,12 @@ GitHub release с notes и образ, запушенный по digest, — и 
 **Цель:** проверенная работа доезжает до прода по решению, а не по скрипту
 выкатки; а отменить это скучно.
 
-1. Добавьте правило автоматизации Jira 6 — «Send web request», которое шлёт
-   `repository_dispatch` типа `verified`, когда тестировщик переводит story в
-   `Ready to release`. Токен GitHub положите в секреты автоматизации Jira.
+1. Добавьте правило автоматизации Jira 6 — «Send web request», которое
+   запускает promote-джобу, когда тестировщик переводит story в
+   `Ready to release`, вызывающее
+   `https://jenkins/job/gitops/job/<service>-promote/buildWithParameters`.
+   API-токен Jenkins положите в секреты автоматизации Jira и убедитесь, что у
+   promote-джобы включён **Trigger builds remotely** с тем же токеном.
 2. Проверьте промоушен в staging, передвинув одну реальную story.
 3. Сделайте **холостой прогон промоушена в прод** с пустым изменением, целиком,
    включая подтверждение. Сделайте это до того, как понадобится.

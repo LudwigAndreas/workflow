@@ -7,6 +7,10 @@
 [OpenSpec](https://github.com/Fission-AI/OpenSpec), связанная с доской Jira по
 Agile/Scrum.
 
+Рассчитана на **Bitbucket Data Center + Jenkins + Argo CD**. Пайплайны Jenkins
+лежат здесь общей библиотекой (`vars/`); в каждом репозитории — `Jenkinsfile`
+на пять строк.
+
 **Начните отсюда: [`docs/pipeline.ru.md`](./docs/pipeline.ru.md)** — одна
 диаграмма, шесть ролей, одиннадцать шлюзов в трёх фазах и ответ на вопрос «где
 источник истины».
@@ -93,18 +97,19 @@ scripts/
   release-version.sh следующий semver из conventional commits; теги; notes
   jira-release.sh    создаёт версию Jira, проставляет Fix Version
   jira-deploy.sh     комментарий о выкатке + поле Deployed Environments
-  promote.sh         копирует digest образа между оверлеями GitOps
-.github/workflows/   шаблоны для репозиториев приложения и gitops
-  sdd-check.yml      метрика SDD в CI
-  pr-conventions.yml conventional-заголовки PR, имена веток, выживание ключей
-  release.yml        шлюз 7 — версия, тег, образ, Fix Version
-  deploy.yml         шлюзы 8 и 10 — оверлей, Argo, Jira, откат
+  promote.sh         копирует digest образа между оверлеями Argo CD
+vars/                общая библиотека Jenkins — сами пайплайны
+  sddRelease.groovy  шлюз 7 — версия, тег, образ, Fix Version
+  sddPromote.groovy  шлюз 10 — запись оверлея, PR в Bitbucket для прода
+  sddObserve.groovy  шлюз 8 — здоровье Argo, обратная связь в Jira, откат
+  sddPrChecks.groovy conventional-заголовки PR, имена веток, выживание ключей
+examples/            короткие Jenkinsfile, которые копирует каждый репозиторий
 ```
 
 Превратить заглушку в сабмодуль, когда реальный репозиторий появился:
 
 ```bash
-scripts/add-repo.sh frontend git@github.com:your-org/frontend.git
+scripts/add-repo.sh frontend ssh://git@bitbucket.acme.com/plat/frontend.git
 ```
 
 ## Метрика SDD
@@ -126,14 +131,16 @@ JIRA_URL=... JIRA_TOKEN=... make check       # плюс проверка мет�
 Влейте PR — больше от вас ничего не требуется:
 
 ```
-squash-влитие в main
+squash-влитие в main в Bitbucket
+  -> Jenkins sddRelease
   -> версия из conventional commits            backend 1.4.2 -> 1.5.0
   -> аннотированный тег + неизменяемый образ   backend-1.5.0
   -> создана версия Jira «backend 1.5.0», Fix Version проставлен на PROJ-123
-  -> обновлён оверлей dev в GitOps, Argo синхронизируется
+  -> обновлён оверлей dev в репозитории Argo CD, Argo синхронизируется
   -> 🚀 «Выкачено в dev — backend 1.5.0» в комментарии тикета
   -> story роллапится в Verifying, тестировщик уведомлён
-  -> тестировщик прошёл -> staging автоматически -> прод по одному подтверждению
+  -> тестировщик прошёл -> staging автоматически
+  -> прод: один pull request в Bitbucket, одно подтверждение, одно влитие
   -> версия Jira помечена Released, story Done
 ```
 

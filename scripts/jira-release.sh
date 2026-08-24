@@ -11,6 +11,7 @@
 #
 #   --range <a..b>   commit range to scan. Default: previous <service>-* tag..<tag>
 #   --keys "A B C"   explicit issue keys, skipping the git scan
+#   --notes-file <f> put the generated release notes on the Jira version
 #   --release        also mark the Jira version Released (use on production deploy)
 #   --dry-run        print what would happen, change nothing
 #
@@ -22,7 +23,7 @@ cd "$(dirname "$0")/.." || exit 2
 # shellcheck source=lib/jira.sh
 . "$(dirname "$0")/lib/jira.sh"
 
-SERVICE="" VERSION="" RANGE="" KEYS="" DO_RELEASE=0
+SERVICE="" VERSION="" RANGE="" KEYS="" NOTES_FILE="" DO_RELEASE=0
 
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -30,9 +31,10 @@ while [ $# -gt 0 ]; do
     --version) VERSION="$2"; shift 2 ;;
     --range)   RANGE="$2"; shift 2 ;;
     --keys)    KEYS="$2"; shift 2 ;;
+    --notes-file) NOTES_FILE="$2"; shift 2 ;;
     --release) DO_RELEASE=1; shift ;;
     --dry-run) JIRA_DRY_RUN=1; export JIRA_DRY_RUN; shift ;;
-    -h|--help) sed -n '2,18p' "$0"; exit 0 ;;
+    -h|--help) sed -n '2,19p' "$0"; exit 0 ;;
     *) echo "unknown argument: $1" >&2; exit 2 ;;
   esac
 done
@@ -69,6 +71,16 @@ echo "issues:   ${KEYS:-none}"
 version_id="$(jira_version_ensure "$VERSION_NAME" "Git tag ${TAG}")" || {
   echo "error: could not create or find Jira version '$VERSION_NAME'" >&2; exit 1; }
 echo "version:  id ${version_id:-?}"
+
+# Release notes live on the Jira version - Bitbucket has no Releases feature,
+# and the version is what non-engineers actually open.
+if [ -n "$NOTES_FILE" ] && [ -f "$NOTES_FILE" ]; then
+  if jira_version_describe "$VERSION_NAME" "$(cat "$NOTES_FILE")"; then
+    echo "notes:    written to the Jira version"
+  else
+    echo "notes:    could not write release notes" >&2
+  fi
+fi
 
 if [ -z "${KEYS// /}" ]; then
   echo "no issue keys in the range - version created, nothing to stamp"

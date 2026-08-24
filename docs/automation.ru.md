@@ -41,35 +41,69 @@ Fix Version отсутствует или карточка не поехала �
 
 ## Автоматизация git и CI
 
-Реализована как GitHub Actions в каждом репозитории приложения. Все четыре
-файла лежат в `.github/workflows/` этого репозитория как шаблоны; копируйте
-как есть.
+Реализована пайплайнами Jenkins. Сами пайплайны лежат в каталоге `vars/` этого
+репозитория, что делает его **общей библиотекой Jenkins** — в каждом
+репозитории приложения и Argo CD лежит только `Jenkinsfile` на пять строк.
+Починка пайплайна — это один коммит здесь, а не pull request в каждом
+репозитории.
 
-| Триггер | Действие | Файл |
+| Триггер | Действие | Где |
 |---|---|---|
-| PR открыт или отредактирован | проверить conventional-заголовок PR | [`pr-conventions.yml`](../.github/workflows/pr-conventions.yml) |
-| PR открыт или отредактирован | проверить имя ветки по шаблону SDD | `pr-conventions.yml` |
-| PR открыт или отредактирован | дописать недостающие ключи Jira в тело PR, чтобы они пережили squash | `pr-conventions.yml` |
-| PR и пуш в `main` | прогнать проверку метрики SDD | [`sdd-check.yml`](../.github/workflows/sdd-check.yml) |
-| Пуш в `main` | вычислить версию из conventional commits | [`release.yml`](../.github/workflows/release.yml) → [`release-version.sh`](../scripts/release-version.sh) |
-| Пуш в `main` | уронить сборку, если опубликованный хотфикс-тег не форвард-портнут | `release.yml` |
-| Пуш в `main` | собрать, просканировать, запушить образ по digest | `release.yml` |
-| Пуш в `main` | создать аннотированный тег и GitHub release notes | `release.yml` |
-| Пуш в `main` | создать версию Jira и проставить Fix Version | `release.yml` → [`jira-release.sh`](../scripts/jira-release.sh) |
-| Пуш в `main` | попросить GitOps выкатить `dev` | `release.yml` |
-| Диспатч `deploy` | записать digest в оверлей `dev` | [`deploy.yml`](../.github/workflows/deploy.yml) → [`promote.sh`](../scripts/promote.sh) |
-| Диспатч `verified` | промоутить `dev` → `staging` | `deploy.yml` |
-| Ручной диспатч | открыть PR промоушена `staging` → `prod` | `deploy.yml` |
-| Argo сообщил Healthy | комментарий в Jira, поле `Deployed Environments`, переход | `deploy.yml` → [`jira-deploy.sh`](../scripts/jira-deploy.sh) |
-| Argo сообщил Degraded | откатить коммит оверлея, прокомментировать откат | `deploy.yml` |
-| Выкатка в прод здорова | пометить версию Jira как Released | `deploy.yml` |
-| Еженедельно по расписанию | PR с бампами зависимостей пачкой | Renovate |
+| PR открыт или обновлён | проверить conventional-заголовок PR | [`sddPrChecks`](../vars/sddPrChecks.groovy) |
+| PR открыт или обновлён | проверить имя ветки по шаблону SDD | `sddPrChecks` |
+| PR открыт или обновлён | дописать недостающие ключи Jira в **описание** PR, чтобы они пережили squash | `sddPrChecks` |
+| PR открыт или обновлён | прогнать проверку метрики SDD | `sddPrChecks` → [`check-sdd.sh`](../scripts/check-sdd.sh) |
+| Любая из проверок завершилась | отправить build status, который Bitbucket может требовать как merge check | `sddPrChecks` → `bb_build_status` |
+| Пуш в `main` | вычислить версию из conventional commits | [`sddRelease`](../vars/sddRelease.groovy) → [`release-version.sh`](../scripts/release-version.sh) |
+| Пуш в `main` | уронить сборку, если опубликованный хотфикс-тег не форвард-портнут | `sddRelease` |
+| Пуш в `main` | собрать, просканировать, запушить образ; получить digest | `sddRelease` |
+| Пуш в `main` | создать аннотированный тег и отправить его в Bitbucket | `sddRelease` |
+| Пуш в `main` | создать версию Jira, проставить Fix Version, приложить release notes | `sddRelease` → [`jira-release.sh`](../scripts/jira-release.sh) |
+| Пуш в `main` | запустить promote-джобу репозитория Argo CD для `dev` | `sddRelease` → `build job:` |
+| Promote-джоба, `dev` | записать digest в оверлей `dev`, запушить в `main` | [`sddPromote`](../vars/sddPromote.groovy) → [`promote.sh`](../scripts/promote.sh) |
+| Promote-джоба, `staging` | скопировать digest из `dev` в `staging`, запушить в `main` | `sddPromote` |
+| Promote-джоба, `prod` | открыть pull request в Bitbucket против оверлея `prod` и остановиться | `sddPromote` → `bb_pr_create` |
+| Пуш в `main` репозитория Argo CD | прочитать трейлеры промоушена, ждать Argo | [`sddObserve`](../vars/sddObserve.groovy) |
+| Argo сообщил Synced/Healthy | комментарий в Jira, поле `Deployed Environments`, переход | `sddObserve` → [`jira-deploy.sh`](../scripts/jira-deploy.sh) |
+| Argo сообщил Degraded | откатить коммит оверлея, прокомментировать откат | `sddObserve` |
+| Выкатка в прод здорова | пометить версию Jira как Released | `sddObserve` → `jira-release.sh --release` |
+| Еженедельно по расписанию | PR с бампами зависимостей пачкой | Renovate (self-hosted, платформа Bitbucket) |
 | Опубликована уязвимость | PR с патчем безопасности немедленно | Renovate |
+
+### Три джобы Jenkins на сервис
+
+| Джоба | Тип | Репозиторий | Срабатывает на |
+|---|---|---|---|
+| `<service>` | Multibranch | приложения | событиях веток и PR; `main` релизит, остальное прогоняет проверки |
+| `gitops/<service>-promote` | Pipeline с параметрами | Argo CD | вышестоящей сборке, вебхуке Jira или человеке |
+| `gitops/<service>-observe` | Multibranch (только `main`) | Argo CD | любом пуше, трогающем оверлей |
+
+Разделение promote и observe — то, что делает продовый путь корректным:
+`sddPromote` останавливается на открытом pull request, а `sddObserve`
+стартует, только когда его кто-то влил. Ничто никогда не ждёт синхронизации,
+которую человек ещё не подтвердил.
+
+### Как связать Bitbucket с Jenkins
+
+В Bitbucket Data Center нет аналога `on: push`. Два способа, по убыванию
+предпочтительности:
+
+1. **Плагин Bitbucket Server Integration** — Jenkins сам регистрирует вебхуки,
+   когда джоба указывает на проект/репозиторий Bitbucket. Меньше всего
+   движущихся частей, и он же отправляет build statuses обратно.
+2. **Вебхук репозитория** на `https://jenkins/…/bitbucket-scmsource-hook/notify`,
+   настраиваемый на каждый репозиторий. Используйте, если плагин не установлен.
+
+В любом случае поставьте **Squash** единственной стратегией влития
+(Repository settings → Merge strategies), иначе деградируют и вычисление
+версии, и сканирование для Fix Version — см.
+[почему](./release.ru.md#конвенции-коммитов-и-pr).
 
 ### Единственное исключение в проверках
 
-Ветки `renovate/*` и `dependabot/*` освобождены от правил имени ветки и ключа
-Jira. У ботов нет story, а [рутина намеренно вне метрики
+Ветки `renovate/*` освобождены от правил имени ветки и ключа Jira (Renovate
+здесь единственный такой бот — Dependabot не умеет Bitbucket Data Center). У
+ботов нет story, а [рутина намеренно вне метрики
 SDD](./work-types.ru.md#рутина). Это единственное исключение; всё остальное,
 чему «нужно исключение», — это работа, которой нужен ключ Jira.
 
@@ -87,13 +121,20 @@ SDD](./work-types.ru.md#рутина). Это единственное искл�
 | 3 | pull request влит | задача — Task | комментарий с SHA влития |
 | 4 | задача переведена в `Deployed to dev` | — | (ставит [`jira-deploy.sh`](../scripts/jira-deploy.sh)) |
 | 5 | переведён потомок | **все** потомки в `Deployed to dev` | перевести родительскую Story в `Verifying`, уведомить QA |
-| 6 | Story переведена в `Ready to release` | — | **отправить веб-запрос** → `repository_dispatch` типа `verified` в GitOps-репозиторий |
+| 6 | Story переведена в `Ready to release` | — | **отправить веб-запрос** → `buildWithParameters` Jenkins на `gitops/<service>-promote`, `TARGET_ENV=staging`, `SOURCE_ENV=dev` |
 | 7 | изменилось поле `Deployed Environments` | значение содержит `prod`, и у всех соседних task'ов тоже | перевести Story в `Done` |
 
 Правило 6 — шарнир между человеческим шлюзом и машиной: перенос тестировщиком
 одной карточки запускает промоушен в staging. Это действие «Send web request»,
-постящее в `repos/<org>/<gitops-repo>/dispatches` с токеном из хранилища
-секретов автоматизации Jira.
+постящее в
+
+```
+POST https://jenkins/job/gitops/job/<service>-promote/buildWithParameters
+     ?SERVICE=<service>&VERSION=<version>&TARGET_ENV=staging&SOURCE_ENV=dev
+```
+
+с API-токеном Jenkins из хранилища секретов автоматизации Jira; джоба должна
+разрешать удалённый запуск.
 
 ### Ограждения
 
@@ -128,19 +169,19 @@ SDD](./work-types.ru.md#рутина). Это единственное искл�
 flowchart LR
     B["git push<br/>ветки"] --> J1["Jira: In progress"]
     P["открыт PR"] --> J2["Jira: In review"]
-    M["squash-влитие"] --> R["release.yml<br/>тег + образ"]
+    M["squash-влитие"] --> R["Jenkins sddRelease<br/>тег + образ"]
     R --> FV["Fix Version проставлен"]
-    R --> GO["GitOps: оверлей dev"]
+    R --> GO["sddPromote: оверлей dev<br/>в репозитории Argo CD"]
     GO --> AR["синхронизация Argo CD"]
-    AR --> JD["jira-deploy.sh<br/>комментарий + поле"]
+    AR --> JD["sddObserve:<br/>комментарий + поле"]
     JD --> J3["Jira: Deployed to dev"]
     J3 --> RU{"все task'и<br/>в dev?"}
     RU -->|"да"| J4["Story: Verifying"]
     J4 --> QA["тестировщик проверяет<br/><i>единственный ручной перенос</i>"]
     QA --> J5["Story: Ready to release"]
-    J5 -->|"вебхук"| ST["промоушен → staging"]
-    ST --> AP["человек подтверждает"]
-    AP --> PR2["промоушен → prod"]
+    J5 -->|"вебхук в Jenkins"| ST["промоушен → staging"]
+    ST --> AP["техлид подтверждает PR"]
+    AP --> PR2["PR влит → prod"]
     PR2 --> J6["Story: Done<br/>версия Released"]
 
     style QA fill:#fef7e0,stroke:#fbbc04,color:#111
@@ -153,29 +194,56 @@ flowchart LR
 
 ## Инвентарь конфигурации
 
-Всё, что нужно автоматизации, в одном месте. Настраивается один раз на
-репозиторий.
+Всё, что нужно автоматизации, в одном месте. В отличие от workflow-файлов по
+репозиториям, Jenkins хранит это централизованно — настраивается один раз, и
+каждая джоба это наследует.
 
-### Переменные репозитория
+### Глобальное окружение Jenkins (Manage Jenkins → System → Global properties)
 
 | Переменная | Пример | Кем используется |
 |---|---|---|
-| `JIRA_URL` | `https://acme.atlassian.net` | все скрипты Jira |
-| `JIRA_PROJECT` | `PROJ` | `jira-release.sh` |
-| `JIRA_EMAIL` | `bot@acme.com` — **только Cloud**, для Server/DC не задавать | переключение режима аутентификации |
-| `JIRA_FIELD_DEPLOYED_ENVS` | `customfield_10042` | `jira-deploy.sh` |
-| `GITOPS_REPO` | `acme/gitops_backend` | `release.yml` |
-| `WORKFLOW_REPO` | `acme/workflow` | получение общих скриптов |
-| `ARGOCD_SERVER` | `argocd.internal` | `deploy.yml` |
+| `SDD_WORKFLOW_REPO` | `ssh://git@bitbucket.acme.com/plat/workflow.git` | `sddScripts` — откуда берётся общий bash |
+| `SDD_JIRA_URL` | `https://jira.acme.com` | все скрипты Jira |
+| `SDD_JIRA_PROJECT` | `PROJ` | `jira-release.sh`, поиск ключей по Fix Version |
+| `SDD_JIRA_EMAIL` | на Jira Server/DC **не задавать**; только для Jira Cloud | переключение режима аутентификации |
+| `SDD_JIRA_FIELD_DEPLOYED_ENVS` | `customfield_10042` | `jira-deploy.sh` |
+| `SDD_BITBUCKET_URL` | `https://bitbucket.acme.com` | `lib/bitbucket.sh` |
+| `SDD_ARGOCD_SERVER` | `argocd.acme.com` | опрос здоровья в `sddObserve` |
+| `SDD_REGISTRY` | `registry.acme.com/platform` | реестр образов по умолчанию |
 
-### Секреты
+### Плагины Jenkins, нужные пайплайнам
 
-| Секрет | Область | Кем используется |
+Библиотека использует несколько шагов, которых нет в ядре Jenkins. Отсутствие
+любого из них ломает сборку *в рантайме*, посреди релиза, с `NoSuchMethodError`,
+который называет шаг, но не плагин, — поэтому проверьте их до того, как
+что-либо подключать.
+
+| Используемый шаг | Плагин |
+|---|---|
+| `pipeline { }` | Pipeline: Declarative |
+| `@Library` | Pipeline: Shared Groovy Libraries |
+| `readJSON` | **Pipeline Utility Steps** — чаще всего именно его и нет |
+| `withCredentials` | Credentials Binding |
+| `cleanWs` | Workspace Cleanup |
+| `timestamps()` | Timestamper |
+| `checkout([$class: 'GitSCM', …])` | Git |
+| multibranch по Bitbucket и build statuses | Bitbucket Server Integration |
+| `writeFile`, `archiveArtifacts`, `build job:` | ядро Pipeline (Basic Steps, Build Step) |
+
+На агентах также должны быть `git`, `curl`, `jq` и `yq` в `PATH`, а для
+репозиториев со сборкой по умолчанию — `docker`.
+
+### Учётные данные Jenkins (Manage Jenkins → Credentials)
+
+| ID | Тип | Права |
 |---|---|---|
-| `JIRA_TOKEN` | API-токен (Cloud) или PAT (DC), от **бот-аккаунта** | все скрипты Jira |
-| `GITOPS_TOKEN` | `repo` на GitOps-репозитории | диспатч в `release.yml` |
-| `WORKFLOW_TOKEN` | чтение репозитория workflow | чекаут скриптов |
-| `ARGOCD_TOKEN` | чтение приложений Argo | опрос здоровья в `deploy.yml` |
+| `sdd-jira-token` | Secret text | PAT Jira от **бот-аккаунта**: переходы, редактирование, комментарии, управление версиями |
+| `sdd-bitbucket-token` | Secret text | HTTP access token Bitbucket: запись в репозитории приложения и Argo CD |
+| `sdd-argocd-token` | Secret text | токен Argo CD, чтение приложений |
+| `sdd-registry` | Username/password | пуш в реестр образов |
+
+ID учётных данных переопределяются на джобу — `sddRelease(jiraCredentials: '…')` —
+но с дефолтами новому репозиторию не нужна вообще никакая настройка секретов.
 
 **Используйте выделенный бот-аккаунт Jira.** Автоматизация от имени человека
 означает, что каждый комментарий и каждый Fix Version приписаны ему, его уход
@@ -196,21 +264,31 @@ flowchart LR
 
 ### Защита продового оверлея
 
-Шлюз 10 обеспечивается branch protection в GitOps-репозитории, а не доверием.
-`deploy.yml` кладёт `dev` и `staging` прямо в `main`, но для `prod` открывает
-**pull request** и останавливается — так что подтверждение это ревью видимого
-однострочного дифа, и оно фиксируется.
+Шлюз 10 обеспечивает Bitbucket, а не доверие. `sddPromote` кладёт `dev` и
+`staging` прямо в `main`, но для `prod` открывает **pull request** и
+останавливается — так что подтверждение это ревью видимого однострочного дифа,
+и Bitbucket фиксирует, кто его дал.
 
-`CODEOWNERS` в каждом GitOps-репозитории:
+В Bitbucket Data Center нет `CODEOWNERS`. Эквивалент — две настройки
+репозитория Argo CD:
 
-```
-apps/*/overlays/prod/**    @your-org/tech-leads
-```
+- **Repository settings → Branch permissions** на `main`: *Prevent changes
+  without a pull request* и требование **1 подтверждения** от группы техлидов.
+- **Repository settings → Merge checks**: требовать зелёную сборку
+  `sdd-pr-checks` и минимальное число подтверждений выше.
 
-плюс branch protection на `main`, требующий ревью владельца кода для этих
-путей. Эта комбинация делает подтверждение выкатки в прод аудируемым событием,
-а не PR, на который кто-то посмотрел, — и поэтому `promote.sh --pr`
-отказывается заворачивать в изменение что-либо, кроме digest.
+Если нужен продовый шлюз по путям, а не по репозиторию, — разделяйте
+репозиторий Argo CD по сервисам (мы так и делаем: `gitops_backend`,
+`gitops_frontend`), а не пытайтесь выразить правила путей, которых в Bitbucket
+нет. **Default reviewers** (Repository settings → Default reviewers, с целевой
+веткой `main`) затем автоматически ставит нужных людей на каждый PR
+промоушена, а `bb_pr_create` читает эту конфигурацию, вместо того чтобы
+зашивать имена.
+
+Альтернатива, которую предпочитают некоторые Jenkins-команды: заменить pull
+request шагом `input` в `sddPromote` с ограничением `submitter: 'tech-leads'`.
+Это на одну движущуюся часть меньше, но теряется читаемый диф, поэтому по
+умолчанию у нас pull request.
 
 ## Когда автоматизация ломается
 
@@ -219,13 +297,15 @@ apps/*/overlays/prod/**    @your-org/tech-leads
 
 | Симптом | Причина | Починка |
 |---|---|---|
-| Fix Version отсутствует у задачи | ключ отсутствует в squash-коммите | проверьте тело PR; `pr-conventions.yml` должен был его дописать |
-| Fix Version у не тех задач | merge-коммиты вместо squash | включите в репозитории только squash-влитие |
-| Карточка застряла в `In review` | интеграция Jira DevOps не связана с репозиторием | пересвяжите в Jira → Settings → Applications |
-| Story застряла в `Verifying` | сервис одного из потомков так и не выкатился | смотрите `deploy.yml` этого сервиса |
+| Fix Version отсутствует у задачи | ключ отсутствует в squash-коммите | проверьте описание PR; `sddPrChecks` должен был его дописать |
+| Fix Version у не тех задач | merge-коммиты вместо squash | Repository settings → Merge strategies → только Squash |
+| Карточка застряла в `In review` | нет связи Jira ↔ Bitbucket | проверьте Application Link и что синхронизация DVCS работает |
+| Story застряла в `Verifying` | сервис одного из потомков так и не выкатился | смотрите джобу `…-observe` этого сервиса |
 | Комментарий о выкатке продублирован | маркер изменился между прогонами | `jira-deploy.sh` опирается на `[deploy:<service>:<env>]`; не правьте его |
 | Версия прыгнула через major | `!` или `BREAKING CHANGE:` просочилось в рутинный коммит | проверьте сообщение тега; перетегируйте осознанно |
 | После влития ничего не зарелизилось | в диапазоне нет conventional-коммитов | ожидаемо — `chore(deps)` даёт patch, пустой диапазон не даёт ничего |
+| Версия каждый раз `0.0.1` | Jenkins склонировал без тегов | чекауту нужен `CloneOption(shallow: false, noTags: false)`; `sddRelease` это ставит |
+| `sddScripts` падает на новом агенте | не задан `SDD_WORKFLOW_REPO` или агент не видит Bitbucket | это глобальное окружение Jenkins, а не настройка джобы |
 
 **Правило: сломанная автоматизация — авария, а не рутина.** Если доска на день
 перестала отражать реальность, люди начинают держать статус в голове и в Slack,

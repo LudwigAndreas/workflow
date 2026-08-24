@@ -99,6 +99,16 @@ jira_version_release() {
     "$(jq -n --arg d "$date" '{released: true, releaseDate: $d}')" >/dev/null
 }
 
+# jira_version_describe <name> <description> — Bitbucket DC has no Releases
+# feature, so the generated notes live on the Jira version instead.
+jira_version_describe() {
+  local id
+  id="$(jira_version_id "$1")"
+  [ -n "$id" ] || { echo "jira: no version named '$1'" >&2; return 1; }
+  jira_api PUT "version/${id}" \
+    "$(jq -n --arg d "$2" '{description: $d}')" >/dev/null
+}
+
 # jira_add_fix_version <issue-key> <version-name> — adds, never replaces.
 jira_add_fix_version() {
   jira_api PUT "issue/$1" "$(jq -n --arg v "$2" \

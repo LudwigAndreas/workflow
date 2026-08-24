@@ -22,8 +22,13 @@ working unattended.
   release range. Always run `--dry-run` first; these are deliberately left out
   of the permission allowlist so they prompt.
 
-- **`scripts/promote.sh --push` / `--pr` pushes to a GitOps repo**, which
+- **`scripts/promote.sh --push` / `--pr` pushes to the Argo CD repo**, which
   deploys. Not allowlisted either, for the same reason.
+
+- **CI/CD is Bitbucket Data Center + Jenkins + Argo CD.** There is no GitHub
+  here: no Actions, no `gh` CLI, no CODEOWNERS. Pull requests go through the
+  Bitbucket REST API (`scripts/lib/bitbucket.sh`), and merge control is
+  Bitbucket branch permissions plus required builds.
 
 - **Verify links after editing docs.** Many pages cross-reference each other by
   anchor, including Cyrillic anchors. Broken anchors are silent — check them
@@ -38,7 +43,8 @@ working unattended.
 
 - `docs/` — pipeline, work types, scrum, release, automation, build guide, roles
 - `scripts/` — the metric check plus the release/Jira/GitOps automation
-- `.github/workflows/` — **templates** the application and GitOps repos copy in;
-  they do not run usefully in this repo
+- `vars/` — the Jenkins shared library; this repo *is* the library, which is
+  why `vars/` sits at the root. `examples/` holds the thin Jenkinsfiles each
+  repo copies in.
 - `src/*` — placeholders until promoted with `scripts/add-repo.sh`
 - `specifications/` — submodule; the shared spec store, kept deliberately small

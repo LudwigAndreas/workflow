@@ -42,34 +42,67 @@ or maintains a release spreadsheet.
 
 ## Git and CI automation
 
-Implemented as GitHub Actions in each application repo. All four files live in
-this repo's `.github/workflows/` as templates; copy them in unchanged.
+Implemented as Jenkins pipelines. The pipelines themselves live in this repo's
+`vars/` directory, which makes this repo a **Jenkins shared library** — each
+application and Argo CD repo carries only a five-line `Jenkinsfile`. Fixing a
+pipeline is one commit here, not a pull request in every repo.
 
-| Trigger | Action | File |
+| Trigger | Action | Where |
 |---|---|---|
-| PR opened or edited | validate conventional PR title | [`pr-conventions.yml`](../.github/workflows/pr-conventions.yml) |
-| PR opened or edited | validate branch name against the SDD pattern | `pr-conventions.yml` |
-| PR opened or edited | append missing Jira keys to the PR body, so they survive the squash | `pr-conventions.yml` |
-| PR, and push to `main` | run the SDD metric check | [`sdd-check.yml`](../.github/workflows/sdd-check.yml) |
-| Push to `main` | compute the next version from conventional commits | [`release.yml`](../.github/workflows/release.yml) → [`release-version.sh`](../scripts/release-version.sh) |
-| Push to `main` | fail if a published hotfix tag was never forward-ported | `release.yml` |
-| Push to `main` | build, scan, push the image by digest | `release.yml` |
-| Push to `main` | create the annotated tag and the GitHub release notes | `release.yml` |
-| Push to `main` | create the Jira version and stamp Fix Versions | `release.yml` → [`jira-release.sh`](../scripts/jira-release.sh) |
-| Push to `main` | ask the GitOps repo to roll `dev` | `release.yml` |
-| Dispatch `deploy` | write the `dev` overlay digest | [`deploy.yml`](../.github/workflows/deploy.yml) → [`promote.sh`](../scripts/promote.sh) |
-| Dispatch `verified` | promote `dev` → `staging` | `deploy.yml` |
-| Manual dispatch | open the `staging` → `prod` promotion PR | `deploy.yml` |
-| Argo reports Healthy | comment on Jira, set `Deployed Environments`, transition | `deploy.yml` → [`jira-deploy.sh`](../scripts/jira-deploy.sh) |
-| Argo reports Degraded | revert the overlay commit, comment the rollback | `deploy.yml` |
-| Prod deploy healthy | mark the Jira version Released | `deploy.yml` |
-| Weekly schedule | grouped dependency-bump PRs | Renovate |
+| Pull request opened or updated | validate conventional PR title | [`sddPrChecks`](../vars/sddPrChecks.groovy) |
+| Pull request opened or updated | validate branch name against the SDD pattern | `sddPrChecks` |
+| Pull request opened or updated | append missing Jira keys to the PR **description**, so they survive the squash | `sddPrChecks` |
+| Pull request opened or updated | run the SDD metric check | `sddPrChecks` → [`check-sdd.sh`](../scripts/check-sdd.sh) |
+| Any of the above finishing | post a build status Bitbucket can require as a merge check | `sddPrChecks` → `bb_build_status` |
+| Push to `main` | compute the next version from conventional commits | [`sddRelease`](../vars/sddRelease.groovy) → [`release-version.sh`](../scripts/release-version.sh) |
+| Push to `main` | fail if a published hotfix tag was never forward-ported | `sddRelease` |
+| Push to `main` | build, scan, push the image; resolve its digest | `sddRelease` |
+| Push to `main` | create the annotated tag and push it to Bitbucket | `sddRelease` |
+| Push to `main` | create the Jira version, stamp Fix Versions, attach release notes | `sddRelease` → [`jira-release.sh`](../scripts/jira-release.sh) |
+| Push to `main` | trigger the Argo CD repo's promote job for `dev` | `sddRelease` → `build job:` |
+| Promote job, `dev` | write the `dev` overlay digest, push to `main` | [`sddPromote`](../vars/sddPromote.groovy) → [`promote.sh`](../scripts/promote.sh) |
+| Promote job, `staging` | copy the `dev` digest to `staging`, push to `main` | `sddPromote` |
+| Promote job, `prod` | open a Bitbucket pull request against the `prod` overlay, then stop | `sddPromote` → `bb_pr_create` |
+| Push to the Argo CD repo's `main` | read the promotion trailers, wait for Argo | [`sddObserve`](../vars/sddObserve.groovy) |
+| Argo reports Synced/Healthy | comment on Jira, set `Deployed Environments`, transition | `sddObserve` → [`jira-deploy.sh`](../scripts/jira-deploy.sh) |
+| Argo reports Degraded | revert the overlay commit, comment the rollback | `sddObserve` |
+| Prod deploy healthy | mark the Jira version Released | `sddObserve` → `jira-release.sh --release` |
+| Weekly schedule | grouped dependency-bump pull requests | Renovate (self-hosted, Bitbucket platform) |
 | Advisory published | security-bump PR, immediately | Renovate |
+
+### The three Jenkins jobs per service
+
+| Job | Type | Repo | Fires on |
+|---|---|---|---|
+| `<service>` | Multibranch | application | branch and PR events; `main` releases, everything else runs checks |
+| `gitops/<service>-promote` | Pipeline, parameterised | Argo CD | upstream build, Jira webhook, or a human |
+| `gitops/<service>-observe` | Multibranch (`main` only) | Argo CD | any push touching an overlay |
+
+Splitting promote from observe is what makes the production path correct:
+`sddPromote` stops at an open pull request, and `sddObserve` only starts once
+somebody has merged it. Nothing ever waits on a sync a human has not approved.
+
+### Wiring Bitbucket to Jenkins
+
+Bitbucket Data Center has no equivalent of `on: push`. Two options, in order of
+preference:
+
+1. **Bitbucket Server Integration plugin** — Jenkins registers the webhooks
+   itself when you point a job at a Bitbucket project/repo. Fewest moving
+   parts, and it also posts build statuses back.
+2. **A repository webhook** to `https://jenkins/…/bitbucket-scmsource-hook/notify`,
+   configured per repo. Use this if the plugin is not installed.
+
+Either way, set **Squash** as the repository's only merge strategy
+(Repository settings → Merge strategies) or the version computation and the
+Fix Version scan both degrade — see
+[why](./release.md#commit-and-pr-conventions).
 
 ### The one exception the checks make
 
-`renovate/*` and `dependabot/*` branches are exempt from the branch-name and
-Jira-key rules. Bots have no story, and
+`renovate/*` branches are exempt from the branch-name and Jira-key rules
+(Renovate is the only such bot here — Dependabot does not support Bitbucket
+Data Center). Bots have no story, and
 [chores are deliberately outside the SDD metric](./work-types.md#chore). This
 is the only exemption; anything else that "needs an exemption" is work that
 needs a Jira key.
@@ -88,7 +121,7 @@ condition, action. Together they mean nobody drags a card.
 | 3 | pull request merged | issue is a Task | comment with the merge SHA |
 | 4 | issue transitioned to `Deployed to dev` | — | (set by [`jira-deploy.sh`](../scripts/jira-deploy.sh)) |
 | 5 | child issue transitioned | **all** children are `Deployed to dev` | transition the parent Story to `Verifying`; notify the QA assignee |
-| 6 | Story transitioned to `Ready to release` | — | **send web request** → GitHub `repository_dispatch` type `verified` on the GitOps repo |
+| 6 | Story transitioned to `Ready to release` | — | **send web request** → Jenkins `buildWithParameters` on `gitops/<service>-promote`, `TARGET_ENV=staging`, `SOURCE_ENV=dev` |
 | 7 | `Deployed Environments` field changed | value contains `prod`, and all sibling tasks do too | transition the Story to `Done` |
 
 Rule 6 is the hinge between the human gate and the machine: the tester moving
@@ -129,19 +162,19 @@ and it removes an entire category of tech debt.
 flowchart LR
     B["git push<br/>branch"] --> J1["Jira: In progress"]
     P["PR opened"] --> J2["Jira: In review"]
-    M["squash merge"] --> R["release.yml<br/>tag + image"]
+    M["squash merge"] --> R["Jenkins sddRelease<br/>tag + image"]
     R --> FV["Fix Version stamped"]
-    R --> GO["GitOps: dev overlay"]
+    R --> GO["sddPromote:<br/>Argo CD repo, dev overlay"]
     GO --> AR["Argo CD sync"]
-    AR --> JD["jira-deploy.sh<br/>comment + field"]
+    AR --> JD["sddObserve:<br/>comment + field"]
     JD --> J3["Jira: Deployed to dev"]
     J3 --> RU{"all tasks<br/>on dev?"}
     RU -->|"yes"| J4["Story: Verifying"]
     J4 --> QA["tester verifies<br/><i>the one manual move</i>"]
     QA --> J5["Story: Ready to release"]
-    J5 -->|"webhook"| ST["promote → staging"]
+    J5 -->|"webhook to Jenkins"| ST["promote → staging"]
     ST --> AP["human approves"]
-    AP --> PR2["promote → prod"]
+    AP --> PR2["Bitbucket PR merged<br/>→ prod"]
     PR2 --> J6["Story: Done<br/>version Released"]
 
     style QA fill:#fef7e0,stroke:#fbbc04,color:#111
@@ -153,28 +186,55 @@ The two yellow boxes are the only human actions in the entire delivery half.
 
 ## Configuration inventory
 
-Everything the automation needs, in one place. Set these once per repo.
+Everything the automation needs, in one place. Unlike per-repo workflow files,
+Jenkins holds this centrally — set it once and every job inherits it.
 
-### Repository variables
+### Jenkins global environment (Manage Jenkins → System → Global properties)
 
 | Variable | Example | Used by |
 |---|---|---|
-| `JIRA_URL` | `https://acme.atlassian.net` | all Jira scripts |
-| `JIRA_PROJECT` | `PROJ` | `jira-release.sh` |
-| `JIRA_EMAIL` | `bot@acme.com` — **Cloud only**, leave unset on Server/DC | auth mode switch |
-| `JIRA_FIELD_DEPLOYED_ENVS` | `customfield_10042` | `jira-deploy.sh` |
-| `GITOPS_REPO` | `acme/gitops_backend` | `release.yml` |
-| `WORKFLOW_REPO` | `acme/workflow` | fetching the shared scripts |
-| `ARGOCD_SERVER` | `argocd.internal` | `deploy.yml` |
+| `SDD_WORKFLOW_REPO` | `ssh://git@bitbucket.acme.com/plat/workflow.git` | `sddScripts` — where the shared bash comes from |
+| `SDD_JIRA_URL` | `https://jira.acme.com` | all Jira scripts |
+| `SDD_JIRA_PROJECT` | `PROJ` | `jira-release.sh`, key lookup by Fix Version |
+| `SDD_JIRA_EMAIL` | leave **unset** on Jira Server/DC; set it only on Jira Cloud | auth mode switch |
+| `SDD_JIRA_FIELD_DEPLOYED_ENVS` | `customfield_10042` | `jira-deploy.sh` |
+| `SDD_BITBUCKET_URL` | `https://bitbucket.acme.com` | `lib/bitbucket.sh` |
+| `SDD_ARGOCD_SERVER` | `argocd.acme.com` | `sddObserve` health polling |
+| `SDD_REGISTRY` | `registry.acme.com/platform` | default image destination |
 
-### Secrets
+### Jenkins plugins the pipelines require
 
-| Secret | Scope | Used by |
+The library uses a handful of steps that are not Jenkins core. Missing any of
+them fails at *runtime*, in the middle of a release, with a `NoSuchMethodError`
+that names the step but not the plugin — so check these before wiring anything
+up.
+
+| Step used | Plugin |
+|---|---|
+| `pipeline { }` | Pipeline: Declarative |
+| `@Library` | Pipeline: Shared Groovy Libraries |
+| `readJSON` | **Pipeline Utility Steps** — the one most often missing |
+| `withCredentials` | Credentials Binding |
+| `cleanWs` | Workspace Cleanup |
+| `timestamps()` | Timestamper |
+| `checkout([$class: 'GitSCM', …])` | Git |
+| multibranch over Bitbucket, and build statuses | Bitbucket Server Integration |
+| `writeFile`, `archiveArtifacts`, `build job:` | Pipeline core (Basic Steps, Build Step) |
+
+The agents also need `git`, `curl`, `jq` and `yq` on `PATH`, and `docker` for
+any repo using the default build.
+
+### Jenkins credentials (Manage Jenkins → Credentials)
+
+| ID | Kind | Scope |
 |---|---|---|
-| `JIRA_TOKEN` | Jira API token (Cloud) or PAT (DC), from a **bot account** | all Jira scripts |
-| `GITOPS_TOKEN` | `repo` on the GitOps repos | `release.yml` dispatch |
-| `WORKFLOW_TOKEN` | `read` on the workflow repo | script checkout |
-| `ARGOCD_TOKEN` | read on Argo applications | `deploy.yml` health polling |
+| `sdd-jira-token` | Secret text | Jira PAT from a **bot account**: transition, edit, comment, manage versions |
+| `sdd-bitbucket-token` | Secret text | Bitbucket HTTP access token: repo write on the app and Argo CD repos |
+| `sdd-argocd-token` | Secret text | Argo CD token, read on applications |
+| `sdd-registry` | Username/password | push access to the image registry |
+
+The credential IDs are overridable per job — `sddRelease(jiraCredentials: '…')` —
+but keeping the defaults means a new repo needs no credential wiring at all.
 
 **Use a dedicated Jira bot account.** Automation running as a person means every
 comment and Fix Version is attributed to them, their leaving breaks the
@@ -194,21 +254,31 @@ fill in, and a field nobody fills in is worse than no field.
 
 ### Protecting the production overlay
 
-Gate 10 is enforced by branch protection on the GitOps repo, not by trust.
-`deploy.yml` lands `dev` and `staging` directly on `main`, but opens a **pull
-request** for `prod` and stops — so the approval is a review of a visible
-one-line diff, and it is recorded.
+Gate 10 is enforced by Bitbucket, not by trust. `sddPromote` lands `dev` and
+`staging` directly on `main`, but opens a **pull request** for `prod` and
+stops — so the approval is a review of a visible one-line diff, and Bitbucket
+records who gave it.
 
-`CODEOWNERS` in each GitOps repo:
+Bitbucket Data Center has no `CODEOWNERS`. The equivalent is two settings on
+the Argo CD repo:
 
-```
-apps/*/overlays/prod/**    @your-org/tech-leads
-```
+- **Repository settings → Branch permissions** on `main`: *Prevent changes
+  without a pull request*, and require **1 approver** from the tech-lead group.
+- **Repository settings → Merge checks**: require the `sdd-pr-checks` build to
+  be green, and require the minimum approvals above.
 
-plus branch protection on `main` requiring code-owner review for those paths.
-That combination is what makes the production approval an audited event rather
-than a merge someone eyeballed, and it is why `promote.sh --pr` refuses to
-bundle anything other than a digest into the change.
+If you want the production gate to be per-path rather than per-repo, split the
+Argo CD repo per service (which we do anyway — `gitops_backend`,
+`gitops_frontend`) rather than trying to express path rules Bitbucket does not
+have. **Default reviewers** (Repository settings → Default reviewers, scoped to
+the `main` target branch) then puts the right people on every promotion PR
+automatically, and `bb_pr_create` reads that configuration rather than
+hard-coding names.
+
+An alternative some Jenkins shops prefer: replace the pull request with an
+`input` step in `sddPromote`, restricted with `submitter: 'tech-leads'`. It is
+one fewer moving part, but you lose the reviewable diff, so we default to the
+pull request.
 
 ## When automation breaks
 
@@ -216,13 +286,15 @@ It will. The failure modes, in the order you will actually hit them:
 
 | Symptom | Cause | Fix |
 |---|---|---|
-| Fix Version missing on an issue | key absent from the squash commit | check the PR body; `pr-conventions.yml` should have appended it |
-| Fix Version on the wrong issues | merge commits, not squash | set the repo to squash-merge only |
-| Card stuck in `In review` | Jira DevOps integration not linked to the repo | re-link in Jira → Settings → Applications |
-| Story stuck in `Verifying` | a child task's service never deployed | check `deploy.yml` for that service |
+| Fix Version missing on an issue | key absent from the squash commit | check the PR description; `sddPrChecks` should have appended it |
+| Fix Version on the wrong issues | merge commits, not squash | Repository settings → Merge strategies → Squash only |
+| Card stuck in `In review` | Jira ↔ Bitbucket link missing | check the Application Link, and that the DVCS accounts sync is running |
+| Story stuck in `Verifying` | a child task's service never deployed | check that service's `…-observe` job |
 | Deploy comment duplicated | the marker changed between runs | `jira-deploy.sh` keys on `[deploy:<service>:<env>]`; don't edit it |
 | Version jumped a major | a `!` or `BREAKING CHANGE:` slipped into a chore | check the tag's message; retag deliberately |
 | Nothing released after a merge | no conventional commits in range | expected — `chore(deps)` still bumps a patch, an empty range does not |
+| Version computed as `0.0.1` every time | Jenkins cloned without tags | the checkout needs `CloneOption(shallow: false, noTags: false)`; `sddRelease` sets this |
+| `sddScripts` fails on a new agent | `SDD_WORKFLOW_REPO` unset, or the agent cannot reach Bitbucket | it is global Jenkins env, not per-job |
 
 **Rule: a broken automation is an incident, not a chore.** If the board stops
 reflecting reality for a day, people start keeping status in their heads and in

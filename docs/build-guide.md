@@ -36,7 +36,7 @@ end.
 | [9](#phase-9--metrics) | DORA + SDD adherence | 4 h | no |
 
 Phases 6–9 are marked non-blocking because the pipeline works without them —
-but 6 is where the workflow becomes visible to people who never open GitHub,
+but 6 is where the workflow becomes visible to people who never open Jenkins,
 which is most of the value, so do not stop at 5.
 
 ---
@@ -73,8 +73,8 @@ contracts.
 1. Create the shared spec store and register it once per machine:
 
    ```bash
-   gh repo create your-org/specifications --private
-   git clone git@github.com:your-org/specifications.git ~/dev/specifications
+   # create the repo in Bitbucket first (Projects -> your project -> Create repository)
+   git clone ssh://git@bitbucket.acme.com/plat/specifications.git ~/dev/specifications
    cd ~/dev/specifications && openspec init
    openspec store register ~/dev/specifications --id specifications
    openspec store list --json     # verify
@@ -97,8 +97,8 @@ contracts.
    context:
 
    ```bash
-   scripts/add-repo.sh backend git@github.com:your-org/backend.git
-   scripts/add-repo.sh frontend git@github.com:your-org/frontend.git
+   scripts/add-repo.sh backend  ssh://git@bitbucket.acme.com/plat/backend.git
+   scripts/add-repo.sh frontend ssh://git@bitbucket.acme.com/plat/frontend.git
    make init && make doctor
    ```
 
@@ -132,8 +132,11 @@ whole model collapses into a wiki.
      "Spec approval", Ready)`.
    - *Delivery*, filtered to `status in (Ready, "In progress", ...)`, swimlanes
      by Epic.
-6. **Connect Jira to GitHub** — the official GitHub for Jira app. This is what
-   makes branch and PR events move cards at all.
+6. **Link Jira to Bitbucket.** Create an **Application Link** between the two
+   (Jira → Settings → Applications → Application links), then enable the
+   **DVCS accounts** sync for the project. This is what makes branch and pull
+   request events move cards at all — without it, rules 1–3 never fire and you
+   are back to dragging cards by hand.
 7. **Create the bot account** and its API token. Grant it: transition issues,
    edit issues, add comments, manage versions. Nothing more.
 
@@ -155,20 +158,25 @@ by hand, so it is wrong by Thursday and the board stops being believed.
    on the wrong issues.
 2. Set the squash commit message default to **"Pull request title and
    description"**.
-3. Copy in the two check workflows:
+3. Add the `Jenkinsfile` from
+   [`examples/Jenkinsfile.app`](../examples/Jenkinsfile.app) to the repo and
+   point a **Multibranch Pipeline** job at it. On a pull request it runs
+   `sddPrChecks`; on `main` it runs `sddRelease` (phase 4).
 
-   ```bash
-   cp .github/workflows/pr-conventions.yml <app-repo>/.github/workflows/
-   cp .github/workflows/sdd-check.yml      <app-repo>/.github/workflows/
-   ```
+4. **Branch permissions** on `main` (Repository settings → Branch permissions):
+   *Prevent changes without a pull request*, one approver, no direct pushes —
+   **including for admins**. An admin bypass is used exactly once at 2am and
+   then permanently.
 
-4. Branch protection on `main`: require both checks, require one approving
-   review, no direct pushes — **including for admins**. An admin bypass is used
-   exactly once at 2am and then permanently.
+5. **Merge checks** (Repository settings → Merge checks): require the
+   `sdd-pr-checks` build status to be green. `sddPrChecks` posts that status
+   through the Bitbucket build-status API, which is how Jenkins gates a merge
+   without GitHub-style required checks.
 
-**Done when:** a PR titled `wip` fails, and a PR titled
+**Done when:** a pull request titled `wip` fails, and one titled
 `feat(auth): add SSO callback` on branch `PROJ-2-sso` passes with the key
-appended to its body automatically.
+appended to its **description** automatically, and Bitbucket shows the
+`sdd-pr-checks` build as required and green.
 
 **Skip it and:** phase 4 produces wrong versions and wrong Fix Versions, and
 you will not notice for weeks.
@@ -180,24 +188,33 @@ you will not notice for weeks.
 **Goal:** every merge to `main` yields a version, a tag and an image, with no
 human input.
 
-1. Copy the release workflow and set the service name:
+1. **Register this repo as a Jenkins shared library**: Manage Jenkins → System
+   → Global Pipeline Libraries. Name it `sdd-workflow`, default version `main`,
+   source = this repo in Bitbucket. Allow the default version to be overridden
+   so a repo can pin `@v1` while you develop `@main`.
 
-   ```bash
-   cp .github/workflows/release.yml <app-repo>/.github/workflows/
-   sed -i '' 's/SERVICE: backend/SERVICE: <your-service>/' \
-     <app-repo>/.github/workflows/release.yml
+2. Set the Jenkins **global environment** and **credentials** from
+   [the configuration inventory](./automation.md#configuration-inventory). This
+   is once for the whole controller, not once per repo — the main practical
+   advantage over per-repo workflow files.
+
+3. In the app repo's `Jenkinsfile`, set the service, registry and the name of
+   its Argo CD promote job:
+
+   ```groovy
+   @Library('sdd-workflow@main') _
+   sddRelease(service: 'backend',
+              registry: 'registry.acme.com/platform',
+              gitopsJob: 'gitops/backend-promote')
    ```
-
-2. Set the repository variables and secrets from
-   [the configuration inventory](./automation.md#configuration-inventory).
-3. **Seed the first tag by hand**, so version computation has a baseline:
+4. **Seed the first tag by hand**, so version computation has a baseline:
 
    ```bash
    git tag -a backend-1.0.0 -m "baseline before automated releases"
    git push origin backend-1.0.0
    ```
 
-4. Dry-run before switching it on:
+5. Dry-run before switching it on:
 
    ```bash
    scripts/release-version.sh --service backend
@@ -205,9 +222,15 @@ human input.
    scripts/jira-release.sh --service backend --version 1.0.1 --dry-run
    ```
 
-**Done when:** merging a PR titled `fix(x): y` produces tag `backend-1.0.1`, a
-GitHub release with notes, and an image pushed by digest — and you did not type
-`1.0.1` anywhere.
+**Done when:** merging a pull request titled `fix(x): y` produces tag
+`backend-1.0.1`, release notes on the Jira version `backend 1.0.1`, and an
+image pushed by digest — and you did not type `1.0.1` anywhere.
+
+**The trap to avoid:** Jenkins clones shallow by default, and version
+computation reads every tag. `sddRelease` forces
+`CloneOption(shallow: false, noTags: false)` for exactly this reason. If your
+job overrides the checkout, keep that option or every release computes
+`0.0.1`.
 
 ---
 
@@ -229,19 +252,23 @@ running a deploy command.
    [why](./release.md#tags-and-images).
 
 2. Create one Argo CD Application per service per environment, named
-   `<service>-<env>` (`deploy.yml` polls that name). Auto-sync **on** for `dev`
-   and `staging`, **off** for `prod` — production syncs when its PR merges.
+   `<service>-<env>` (`sddObserve` polls that name). Auto-sync **on** for `dev`
+   and `staging`, **off** for `prod` — production syncs when its pull request
+   merges.
 
-3. Copy in the deploy workflow and set its variables:
+3. Create **two Jenkins jobs** per service against the Argo CD repo:
 
-   ```bash
-   cp .github/workflows/deploy.yml <gitops-repo>/.github/workflows/
-   ```
+   - `gitops/<service>-observe` — Multibranch over `main`, using
+     [`examples/Jenkinsfile.gitops`](../examples/Jenkinsfile.gitops).
+   - `gitops/<service>-promote` — a parameterised Pipeline job using
+     [`examples/Jenkinsfile.promote`](../examples/Jenkinsfile.promote). Tick
+     **Trigger builds remotely** so Jira can start it in phase 7.
 
-4. Protect the production overlay:
-   [`CODEOWNERS` + branch protection](./automation.md#protecting-the-production-overlay)
-   on `apps/*/overlays/prod/**`. `dev` and `staging` need no protection —
-   they are meant to move constantly.
+4. Protect the production overlay with
+   [Bitbucket branch permissions and merge checks](./automation.md#protecting-the-production-overlay).
+   Bitbucket Data Center has no `CODEOWNERS`, so the gate is per-repo — which
+   is fine, because the Argo CD repos are already split per service. `dev` and
+   `staging` need no protection; they are meant to move constantly.
 
 5. Define health honestly. A readiness probe returning 200 is not health —
    Argo must see the workload actually serving. Bad health definitions are what
@@ -292,9 +319,12 @@ developer. This is the phase people actually notice.
 **Goal:** verified work reaches production on a decision, not on a deploy
 script; and reversing it is boring.
 
-1. Add Jira automation rule 6 — the "Send web request" that fires
-   `repository_dispatch` type `verified` when a tester moves a story to
-   `Ready to release`. Store the GitHub token in Jira's automation secrets.
+1. Add Jira automation rule 6 — the "Send web request" that starts the promote
+   job when a tester moves a story to
+   `Ready to release`, calling
+   `https://jenkins/job/gitops/job/<service>-promote/buildWithParameters`.
+   Store the Jenkins API token in Jira's automation secrets, and make sure the
+   promote job has **Trigger builds remotely** enabled with a matching token.
 2. Test the staging promotion by moving one real story.
 3. Do a **production promotion dry run** with a no-op change, all the way
    through the approval. Do this before you need it.

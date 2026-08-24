@@ -21,7 +21,7 @@
 Клонируйте только свой репозиторий:
 
 ```bash
-git clone git@github.com:your-org/<frontend|backend|...>.git
+git clone ssh://git@bitbucket.acme.com/plat/<frontend|backend|...>.git
 cd <your-repo>
 ```
 

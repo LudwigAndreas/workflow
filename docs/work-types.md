@@ -266,7 +266,7 @@ that is all the ceremony they get.
 
 | Chore | Automated by | Human involvement |
 |---|---|---|
-| Dependency bumps | Renovate / Dependabot, grouped weekly | approve the PR |
+| Dependency bumps | Renovate, self-hosted, grouped weekly | approve the PR |
 | Security patches | Renovate, `security` label, opened immediately | approve, same day |
 | Lockfile drift | CI, auto-committed | none |
 | Formatting | pre-commit hook + CI | none |
@@ -277,8 +277,9 @@ The rule: **if a chore recurs, automate it or stop doing it.** A chore that has
 been done by hand three times is an automation story.
 
 Renovate PRs are exempt from the branch-naming check by pattern (`renovate/*`),
-which is the one exception `scripts/check-sdd.sh` makes and the only one it
-should ever make.
+which is the one exception the checks make and the only one they should ever
+make. Renovate is self-hosted here because it is the dependency bot that speaks
+Bitbucket Data Center; Dependabot does not.
 
 ---
 

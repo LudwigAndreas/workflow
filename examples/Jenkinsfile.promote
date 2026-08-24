@@ -1,0 +1,15 @@
+// GitOps repo, second job: "gitops/backend-promote".
+//
+// Parameterised, not multibranch. Triggered three ways:
+//   dev      by the upstream sddRelease build
+//   staging  by the Jira webhook fired when a tester passes gate 9
+//   prod     by a human, Build with Parameters
+//
+// prod stops at an open Bitbucket pull request. Merging it is gate 10.
+
+@Library('sdd-workflow@main') _
+
+sddPromote(
+    bitbucketProject: 'PLAT',
+    bitbucketRepo:    'gitops-backend'
+)

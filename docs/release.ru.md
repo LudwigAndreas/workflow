@@ -86,10 +86,10 @@ session cookie. Implements the "SSO callback" requirement.
 PROJ-125
 ```
 
-Ключ Jira дописывается в тело PR автоматически из имени ветки в
-[`.github/workflows/pr-conventions.yml`](../.github/workflows/pr-conventions.yml),
-если автор забыл, — так что это конвенция со страховкой, а не правило, которое
-люди проваливают.
+В Bitbucket squash-коммит собирается из **заголовка и описания** pull request,
+поэтому ключ Jira должен быть в одном из них. Если автор забыл,
+[`sddPrChecks`](../vars/sddPrChecks.groovy) допишет его в описание из имени
+ветки — конвенция со страховкой, а не правило, которое люди проваливают.
 
 ### Теги и образы
 
@@ -114,7 +114,7 @@ flowchart TD
     V --> T["Создать аннотированный тег<br/><code>backend-1.5.0</code>"]
     T --> B["Собрать + тесты + скан<br/>запушить образ по digest"]
     B --> J1["<b>Jira: релиз</b><br/>создать версию «backend 1.5.0»<br/>проставить Fix Version всем ключам"]
-    T --> N["Сгенерировать changelog<br/>+ GitHub release notes"]
+    T --> N["Сгенерировать changelog<br/>в тег и версию Jira"]
     B --> G["Открыть PR в GitOps<br/>оверлей dev → новый digest<br/><i>вливается автоматически</i>"]
     G --> A["Argo CD синхронизирует <code>dev</code>"]
     A --> H{"Здоров?"}
@@ -133,9 +133,11 @@ flowchart TD
 разработчики перестают доверять dev и начинают тестировать на ноутбуках, и вся
 петля обратной связи, ради которой пайплайн существует, исчезает.
 
-Реализация: [`.github/workflows/release.yml`](../.github/workflows/release.yml),
+Реализация: [`vars/sddRelease.groovy`](../vars/sddRelease.groovy),
 [`scripts/release-version.sh`](../scripts/release-version.sh),
-[`scripts/jira-release.sh`](../scripts/jira-release.sh).
+[`scripts/jira-release.sh`](../scripts/jira-release.sh). Пайплайн — общая
+библиотека Jenkins; в каждом репозитории лежит `Jenkinsfile` на пять строк,
+см. [`examples/Jenkinsfile.app`](../examples/Jenkinsfile.app).
 
 ## Окружения и промоушен
 
@@ -182,7 +184,7 @@ PR промоушена в `prod` меняет ровно одну строку.
 ## Обратная связь в Jira
 
 Это та часть, которая делает всю систему понятной людям, никогда не
-открывающим GitHub. В ней три слоя, и пишут их два скрипта.
+открывающим Bitbucket или Jenkins. В ней три слоя, и пишут их два скрипта.
 
 ### Слой 1 — Fix Version, проставляется на теге
 
@@ -250,8 +252,10 @@ Story PROJ-123  «Single sign-on»
 
 Генерируются дважды, для двух аудиторий, из одних и тех же данных:
 
-- **Технические**, на сервис, на тег: changelog из conventional commits, в
-  GitHub release. Сгруппированы по типам, со ссылками на ключи Jira.
+- **Технические**, на сервис, на тег: changelog из conventional commits. В
+  Bitbucket Data Center нет Releases, поэтому они живут в двух местах, которые
+  есть: в **сообщении аннотированного тега** и в **описании версии Jira**.
+  Jenkins дополнительно сохраняет их артефактом сборки.
 - **Продуктовые**, на каждый промоушен в прод: набор задач, чьи Fix Version
   стали Released, сгруппированные по Epic'ам, по заголовкам задач, а не по
   сообщениям коммитов. Публикуются в релизный канал и прикладываются к версии

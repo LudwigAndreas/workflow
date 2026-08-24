@@ -105,11 +105,11 @@ else
   exit 0
 fi
 
-command -v gh >/dev/null 2>&1 || { echo "error: gh not found on PATH" >&2; exit 2; }
+# ------------------------------------------------------------- the pull request
+bb_require BITBUCKET_URL BITBUCKET_TOKEN BITBUCKET_PROJECT BITBUCKET_REPO || exit 2
+command -v jq >/dev/null 2>&1 || { echo "error: jq not found on PATH" >&2; exit 2; }
 
-gh pr create \
-  --title "Promote ${SERVICE} ${VERSION:-$DIGEST} to ${TO}" \
-  --body "$(cat <<EOF
+description="$(cat <<EOF
 Promotes the **already-built** ${SERVICE} image to \`${TO}\`.
 
 | | |
@@ -119,8 +119,14 @@ Promotes the **already-built** ${SERVICE} image to \`${TO}\`.
 | Previously on ${TO} | \`${previous:-none}\` |
 | Source | \`${FROM:-build}\` |
 
-This PR changes one digest and one tag. Approving it is a decision about
-*when*, not *what* — the what was verified at gate 9.
+This pull request changes one digest and one tag. Approving it is a decision
+about *when*, not *what* - the what was verified at gate 9.
 EOF
-)" \
-  --label promotion
+)"
+
+pr_url="$(bb_pr_create "$branch" "$base" \
+  "Promote ${SERVICE} ${VERSION:-$DIGEST} to ${TO}" "$description")" || {
+  echo "error: could not open the pull request" >&2
+  exit 1
+}
+echo "pull request: ${pr_url:-opened}"

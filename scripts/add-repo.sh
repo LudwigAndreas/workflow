@@ -2,7 +2,7 @@
 # Promote a src/<name> placeholder into a real git submodule.
 #
 # Usage: scripts/add-repo.sh <name> <git-url>
-# Example: scripts/add-repo.sh frontend git@github.com:acme/frontend.git
+# Example: scripts/add-repo.sh frontend ssh://git@bitbucket.acme.com/plat/frontend.git
 
 set -euo pipefail
 
