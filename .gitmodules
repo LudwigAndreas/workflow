@@ -1,4 +1,0 @@
-[submodule "specifications"]
-	path = specifications
-	url = git@github.com:LudwigAndreas/specifications.git
-	branch = main
