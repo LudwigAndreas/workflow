@@ -1,0 +1,212 @@
+name: master-intent
+version: 2
+description: >-
+  Master intent - the business source of truth for one Jira story, and a META
+  layer above the standard OpenSpec workflow rather than a variant of it.
+  Analytics authors the intent and the business-rule delta it implies; nothing
+  else. A developer then feeds that intent into the STANDARD OpenSpec workflow
+  in their own repository - /opsx:propose, /opsx:apply, /opsx:archive - and owns
+  every artifact it produces. The intent is the prepared context that goes into
+  propose; it is never half of a propose.
+artifacts:
+  - id: intent
+    generates: intent.md
+    description: The business need, the whole-system context, and the fan-out checklist
+    template: intent.md
+    instruction: >
+      Write the business source of truth for one Jira story, for readers who
+      will each go on to run the standard OpenSpec workflow in their own
+      repository.
+
+
+      Understand what this artifact is, because it is easy to write the wrong
+      document. It is **not** a proposal, and it is not the first half of one.
+      A developer will paste it - or point at it - as the input to
+      `/opsx:propose` in their repository, and from it they will write their
+      own proposal, their own specs, their own design and their own tasks. Your
+      job is to make that possible without them having to ask you anything.
+      Their job is everything from `propose` onward, and it is not yours.
+
+
+      So: write the business meaning, the business need, and the whole-system
+      context. Do not write, and do not imply, a technical solution.
+
+
+      Ground the current-state parts in sources you actually read:
+
+
+      1. `openspec/specs/` in THIS store - the accumulated business rules,
+         maintained by previous intents. Read them first:
+         `openspec list --specs --store specifications`, then
+         `openspec show <capability> --type spec --store specifications`.
+      2. The application repositories, for anything the business rules do not
+         cover. In the workflow repo they are checked out under `src/`. Cite
+         what you found as `src/<repo>/<path>` so a developer can open the
+         same file.
+
+      Sections:
+
+
+      - **Business need**: Why this is worth doing, whose problem it solves,
+        and what happens if it is not done. One or two paragraphs, in the
+        language of the business rather than the system.
+
+      - **Today**: How this capability behaves for the business now, cited.
+        Where an existing business rule applies, name it. Where nothing covers
+        the area, say "no existing business rule covers this" - that is a
+        finding, not a gap in your work.
+
+      - **What must be true afterwards**: The business outcome, observable to a
+        user or another organisation. Not the mechanism. If a sentence could
+        only be written by someone who knows the codebase, it does not belong
+        here.
+
+      - **System context**: The whole-system facts a developer in ONE
+        repository could not work out alone, and the reason this store exists.
+        Cover, where they apply: the external API contracts involved - the
+        ones this system exposes to or consumes from the outside world,
+        including the shape the outside world has already fixed; the user
+        interface that is needed, in terms of what a user must be able to see
+        and do; the data that must be captured, retained or removed; and the
+        events or integrations other parties depend on. Attach or link the
+        external contract documents themselves where they exist - an OpenAPI
+        fragment, a partner's published schema, a UI flow. This is context, not
+        design: state what the outside world requires, never how this system
+        should be built to meet it.
+
+      - **Repositories**: A table, `Repo | Jira task | What it contributes`.
+        One row per repository that will do work, and rows for repositories
+        that were considered and ruled out, saying so. This tells each
+        developer that their part exists and that someone else owns the rest.
+        Do NOT specify what any repository should build - that is what their
+        own `propose` decides.
+
+      - **Constraints**: What limits the solution space and is not negotiable
+        by this intent - compliance rules, data retention, backward
+        compatibility with released clients, a partner's timetable,
+        performance commitments. Cite where each comes from.
+
+      - **Open questions**: What you could not answer. Each gets an owner and
+        states what it blocks. Never invent an answer to close one; an unknown
+        surfaced here is cheap, and the same unknown found during
+        implementation is not.
+
+      - **Fan-out**: One checkbox per repository in the Repositories table,
+        exactly in this form, and left **entirely unticked**:
+
+        ```
+
+        ## Fan-out
+
+        - [ ] backend (PROJ-124) - change archived
+
+        - [ ] frontend (PROJ-125) - change archived
+
+        ```
+
+        A box is ticked only once that repository has archived its own change,
+        and `scripts/intent-gate.sh` verifies every one against the
+        repositories themselves before this intent may be archived.
+    requires: []
+  - id: specs
+    generates: specs/**/*.md
+    description: The business rules this intent changes - the delta folded into the store on archive
+    template: spec.md
+    instruction: >
+      Write the delta to the **business rules** this intent changes. This is
+      how the store stays a description of the business and not a pile of
+      archived documents: on archive, this delta folds into
+      `openspec/specs/`, and that is what the next intent is written against.
+
+
+      It is also what a tester writes scenarios from before any code exists,
+      and what a developer's own `propose` derives their repository's
+      requirements from.
+
+
+      Altitude - the rule that keeps this store from duplicating the
+      repositories:
+
+
+      - Include rules a user, a customer or another organisation can observe,
+        and rules more than one repository must agree on.
+      - Exclude anything only observable inside a single repository. That is a
+        component requirement, and the developer who owns that repository
+        writes it there, in their own change, during `propose`.
+      - Quick test: if the implementation could change freely without changing
+        anything externally visible, it does not belong here.
+      - Never name a class, function, library, framework or file. If you cannot
+        state the rule without one, you are describing a solution.
+
+      One file per capability. New capabilities: `specs/<capability>/spec.md`
+      with a kebab-case name. Modified capabilities: use the existing folder
+      name from `openspec/specs/<capability>/`.
+
+
+      Format - these rules are mechanical and failing them breaks the pipeline
+      silently:
+
+
+      - Delta headers, as `##`: `## ADDED Requirements`,
+        `## MODIFIED Requirements`, `## REMOVED Requirements`,
+        `## RENAMED Requirements`.
+      - Each requirement: `### Requirement: <name>`, then a description using
+        SHALL or MUST. Avoid should and may - a tester cannot verify a "may".
+      - Each scenario: `#### Scenario: <name>` with `- **WHEN**` /
+        `- **THEN**` bullets. **Exactly four hashtags.** Three hashtags or a
+        bullet list will be parsed as nothing at all, with no error.
+      - Every requirement MUST have at least one scenario.
+      - New capabilities only: open the file with a `## Purpose` section of at
+        least 50 characters. Archive copies it into the main spec. Do NOT add
+        `## Purpose` to a delta for an existing capability - it is ignored.
+
+      MODIFIED requirements: copy the ENTIRE existing requirement block from
+      `openspec/specs/<capability>/spec.md`, including all its scenarios, then
+      edit. A partial copy silently deletes the scenarios you left out when
+      the intent is archived. If you are adding a new concern rather than
+      changing existing behaviour, use ADDED instead.
+
+
+      Scenario quality - the tester reviews this and will send it back:
+
+
+      - **WHEN** is a concrete, externally triggerable event. "When the user
+        submits the form with an expired token", not "when the user is
+        unauthorised".
+      - **THEN** is observable from outside the system. A status code, a
+        rendered message, a stored record, an emitted event. Never "the
+        service knows" or "the state is correct".
+      - Cover the unhappy paths: invalid input, expired or missing
+        credentials, absent permissions, empty collections, duplicate
+        submissions, and the dependency being down. An intent whose scenarios
+        are all happy-path is not ready for review.
+      - Where a rule spans repositories, write the scenario from the
+        consumer's point of view, so both sides can verify it independently.
+
+      An intent that changes no observable business rule legitimately has no
+      specs at all - set `skip_specs: true` rather than inventing a
+      requirement to satisfy validation.
+    requires:
+      - intent
+apply:
+  requires:
+    - intent
+  tracks: intent.md
+  instruction: |
+    Applying a master intent does NOT mean writing code, and it does not mean
+    writing a proposal. The implementation lives in the application
+    repositories, each in its own standard OpenSpec change, written and owned
+    by that repository's developer.
+
+    Applying here means driving the fan-out to completion:
+
+    1. Confirm each repository named in the intent has a change linked back to
+       it (`intent: <intent-id>` in its `.openspec.yaml`).
+    2. Tick a Fan-out checkbox only once that repository's change has been
+       archived in its own repository.
+    3. Never tick a box to make the checklist look finished. The archive gate
+       verifies each one against the repositories themselves and will
+       contradict you.
+
+    Run `scripts/intent-status.sh <intent-id>` from the workflow repo to see
+    the real state rather than reasoning about it.

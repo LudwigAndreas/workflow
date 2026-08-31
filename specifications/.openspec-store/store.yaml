@@ -1,0 +1,3 @@
+version: 1
+id: specifications
+remote: git@github.com:LudwigAndreas/specifications.git

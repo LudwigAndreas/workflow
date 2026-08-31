@@ -1,0 +1,93 @@
+schema: master-intent
+
+# This store is the BUSINESS SOURCE OF TRUTH for the product.
+#
+# It is a META layer above the standard OpenSpec workflow, not a variant of it.
+# Analytics authors a master intent here - the business need and the
+# whole-system context - and a developer then feeds that intent into the
+# STANDARD OpenSpec workflow in their own repository, where they write their
+# own proposal, specs, design and tasks. The intent is the prepared context
+# that goes INTO propose; it is never half of a propose.
+#
+# openspec/specs/   - the business rules as they stand today. Written only by
+#                     archiving a master intent; never edited by hand except to
+#                     fix a Purpose placeholder.
+# openspec/changes/ - the master intents currently in flight. One per Jira
+#                     story or improvement. Two artifacts: intent.md and the
+#                     business-rule delta in specs/.
+#
+# Analytics authors master intents here, usually from the `workflow` repo where
+# every application repository is checked out side by side as a submodule, so
+# cross-repo context is available. Implementation NEVER lives here, and neither
+# does any artifact of the developer's workflow.
+context: |
+  This is the shared, cross-repository specification store for a multirepo
+  application. The application repositories are:
+
+    backend           the service layer and its HTTP/event APIs
+    frontend          the user-facing web client
+    gitops_backend    Argo CD desired state for the backend
+    gitops_frontend   Argo CD desired state for the frontend
+
+  CI/CD is Bitbucket Data Center + Jenkins + Argo CD. There is no GitHub here:
+  no Actions, no `gh` CLI, no CODEOWNERS. Deployment always goes through the
+  Argo CD repositories - a pipeline writes an image reference and Argo rolls it
+  out; nothing applies manifests directly.
+
+  Work is tracked in Jira. One master intent corresponds to one Story or
+  Improvement carrying the `SDD` label; each affected repository gets a child
+  Task, and that Task's key names the branch.
+
+  A master intent has exactly two artifacts:
+
+    intent.md   the business need, how it works today, what must be true
+                afterwards, the whole-system context - external API contracts,
+                the UI needed, data, integrations - the repositories involved,
+                constraints, open questions, and the fan-out checklist.
+    specs/      the delta to the business rules, folded into openspec/specs/
+                when the intent is archived.
+
+  Nothing else belongs here. proposal.md, design.md and tasks.md are the
+  developer's artifacts, written in the developer's repository, by the
+  developer, using the unmodified OpenSpec workflow.
+
+rules:
+  intent:
+    - "This is not a proposal and not the first half of one. A developer will feed it into `/opsx:propose` in their own repository and write their own proposal, specs, design and tasks from it. Write the business meaning and the whole-system context; never the solution."
+    - "Cite a source for every claim about today: a capability spec in openspec/specs/, or a real file path in an application repo. An uncited claim is a guess."
+    - "Stay at business altitude. Never name a class, function, library, framework or file. If a sentence could only be written by someone who knows the codebase, it does not belong here."
+    - "The System context section is the reason this store exists: it carries the facts a developer in ONE repository could not work out alone - external API contracts, the user interface needed, data obligations, events other parties depend on. Attach or link external contract documents where they exist."
+    - "In the Repositories table, say what each repository contributes in business terms. Do NOT specify what it should build - that is what its own propose decides."
+    - "List repositories that will NOT change, and say they will not. Ruling an area out is a finding a developer needs."
+    - "Never close an open question by inventing an answer. Assign it an owner and state what it blocks."
+    - "Leave every Fan-out checkbox unticked. They are ticked only as each repository archives its own change, and scripts/intent-gate.sh verifies them independently."
+  specs:
+    - "These are BUSINESS rules: what a user, a customer or another organisation can observe, and what more than one repository must agree on. Not how any single repository implements it."
+    - "If a rule is only observable inside one repository, it does not belong here - the developer who owns that repository writes it there, during their own propose."
+    - "Every requirement needs at least one unhappy-path scenario. All-happy-path specs are sent back at review."
+    - "Scenarios use exactly four hashtags (#### Scenario:). Three hashtags or bullets parse as nothing and fail silently."
+    - "For MODIFIED requirements, copy the entire existing requirement block including every scenario before editing. A partial copy silently deletes scenarios at archive time."
+    - "An intent that changes no observable business rule legitimately has no specs. Set skip_specs: true rather than inventing a requirement to satisfy validation."
+  proposal:
+    - "STOP. proposal.md does not belong in this store at all. The proposal is the DEVELOPER's artifact, written in the developer's own repository with the standard `/opsx:propose`, using this intent as its input."
+    - "Writing one here would split a single OpenSpec workflow across two roles, which is exactly what this layer exists to avoid. Tell the user that rather than creating this file."
+  design:
+    - "STOP. design.md does not belong in this store at all. Implementation detail must not live in the business source of truth."
+    - "The team that owns the implementing repository writes design.md in THAT repository, in a change that links back to this intent. Tell the user that rather than creating this file."
+  tasks:
+    - "STOP. tasks.md does not belong in this store at all. Each repository plans its own work in its own repo, in its own change."
+    - "Cross-repository sequencing and per-repository scope belong in intent.md. Tell the user that rather than creating this file."
+
+operations:
+  apply:
+    guidance:
+      - "Applying a master intent means driving the fan-out, not writing code and not writing a proposal. Every artifact of the implementation lives in the application repositories."
+      - "Tick a Fan-out checkbox in intent.md only after that repository's change is archived in its own repository. Run scripts/intent-status.sh to see the real state."
+  archive:
+    guidance:
+      - "STOP and run the gate first: `./scripts/intent-gate.sh <intent-id>` in the workflow repo. It reads the application repositories themselves and refuses when one has not archived its derived change, which the CLI's checkbox warning does not. If it fails, report which repositories are outstanding and do not archive."
+      - "Never reach for `openspec archive --yes` to get past an incomplete fan-out. That flag exists to skip the warning the gate is there to enforce."
+      - "Tick the Fan-out checkboxes with `./scripts/intent-gate.sh <intent-id> --tick`, which ticks only what it independently verified. Never edit intent.md by hand to make the gate pass."
+      - "Confirm with the user before writing. Archiving folds this intent's specs into openspec/specs/, the baseline every future intent is written against and the description analytics treats as the current system. Show the intent id, its Jira story, each repository and the archived change that satisfied it, and the capabilities about to be created or modified."
+      - "After archiving, verify the baseline: `openspec list --specs --store specifications` and `openspec validate --specs --store specifications --strict`. Two failure modes are silent - a NEW capability whose delta had no `## Purpose` lands with a `TBD ... Update Purpose after archive` placeholder, and a MODIFIED requirement copied only partially silently drops the scenarios that were omitted. Fix both by editing openspec/specs/<capability>/spec.md against the archived intent."
+      - "Archiving early publishes a description of behaviour that does not exist yet, and every intent authored afterwards inherits the error."

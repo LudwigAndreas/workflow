@@ -1,0 +1,115 @@
+schema: spec-driven
+
+# This repository uses the DEFAULT OpenSpec workflow, unchanged.
+#
+#   /opsx:propose   proposal.md -> specs/ -> design.md -> tasks.md
+#   /opsx:apply     work the tasks
+#   /opsx:archive   fold this repo's specs into openspec/specs/
+#
+# There is no custom schema and no custom command here on purpose. Everything
+# specific to this team lives below, as `context`, `rules` and `operations`
+# guidance, which the OpenSpec CLI injects into those default commands through
+# `openspec instructions`. A developer learns one workflow, the standard one,
+# and this file supplies the local knowledge.
+#
+# openspec/specs/   - how THIS repository behaves today, at its own boundary.
+# openspec/changes/ - work in flight here. Each change takes an approved master
+#                     intent as its INPUT and records `intent: <intent-id>` in
+#                     its .openspec.yaml.
+#
+# The master intent is a meta layer that sits BEFORE propose: analytics writes
+# the business need and the whole-system context, and you write the proposal,
+# the specs, the design and the tasks from it. Every artifact of this change is
+# yours. Reach the intent with `--store specifications` - you never need that
+# store checked out locally.
+context: |
+  Repository: __REPO__
+  Role: __REPO_ROLE__
+
+  This is one repository of a multirepo application. The others are:
+
+    backend           the service layer and its HTTP/event APIs
+    frontend          the user-facing web client
+    gitops_backend    Argo CD desired state for the backend
+    gitops_frontend   Argo CD desired state for the frontend
+
+  Work here always starts from an approved master intent in the shared
+  `specifications` store. Read the intent before proposing anything - it is the
+  input to your proposal, not a substitute for it:
+
+    openspec list --store specifications
+    openspec show <intent-id> --store specifications
+
+  A master intent has two artifacts, both written by analytics:
+
+    intent.md   the business need, how it works today, what must be true
+                afterwards, and the whole-system context a developer in one
+                repository could not work out alone: the external API
+                contracts involved, the user interface needed, data
+                obligations, and the repositories taking part.
+    specs/      the business rules the change adds or modifies.
+
+  It deliberately does NOT say what to build here. Deciding this repository's
+  scope, its component specs, its design and its tasks is your job, and it is
+  what /opsx:propose is for.
+
+  Record the link in this change's .openspec.yaml before writing any artifact.
+  scripts/check-sdd.sh and scripts/intent-gate.sh in the workflow repo both
+  read these keys, and a change without them does not count as spec-driven:
+
+    schema: spec-driven
+    jira: PROJ-124          # THIS repo's Jira task, not the story
+    intent: <intent-id>     # the master intent this derives from
+    intent_store: specifications
+
+  Repositories work in parallel against the business rules and the external
+  contracts the intent publishes. Another team may be building against your
+  side of one right now, so a shared contract cannot be changed unilaterally
+  here - it changes in the intent, or not at all.
+
+  CI/CD is Bitbucket Data Center + Jenkins + Argo CD. There is no GitHub: no
+  Actions, no `gh` CLI, no CODEOWNERS. Pull requests go through the Bitbucket
+  REST API and merge control is Bitbucket branch permissions plus required
+  builds. Deployment goes through the Argo CD repositories - a pipeline writes
+  an image reference and Argo rolls it out; nothing applies manifests directly.
+
+  Jira: this change corresponds to one Task under the intent's Story. The Task
+  key names the branch, as `<STORY-KEY>/<TASK-KEY>-<slug>`.
+
+rules:
+  proposal:
+    - "Read the master intent from the store before writing. It is the input to this proposal. Do not work from memory of a conversation about it: `openspec show <intent-id> --store specifications --json`."
+    - "Record `intent:`, `intent_store:` and `jira:` in .openspec.yaml before writing anything else. The SDD metric check and the intent archive gate both read them."
+    - "Decide this repository's scope yourself. The intent says what must be true for the business, not what to build here - working that out is the job of this proposal."
+    - "Never restate the intent's business case. Two sentences and a link to the intent - a second copy drifts from the first."
+    - "Scope strictly to this repository. If a bullet requires another repository to change, it belongs to that repository's own change - or the intent is wrong."
+    - "Confirm you can meet every external API contract and business rule the intent fixes. If you cannot, STOP and raise it against the intent. Do not quietly implement something different - another repository is building against the published version."
+    - "Say what a reader might expect here but will find in another repository's change, naming that repository. This is what stops two developers building the same thing twice."
+  specs:
+    - "Describe behaviour at THIS repository's boundary only. Business rules and cross-repo contracts stay in the master intent - do not copy them here."
+    - "Altitude test: if another repository would have to change because this requirement changed, it belongs in the intent, not here. If this repository could be rewritten in another language and the requirement would still hold, it belongs here."
+    - "It is legitimate to have no component specs at all. Set skip_specs: true rather than inventing a requirement to satisfy validation."
+    - "Scenarios use exactly four hashtags (#### Scenario:). Three hashtags or bullets parse as nothing and fail silently."
+    - "For MODIFIED requirements, copy the entire existing requirement block including every scenario before editing. A partial copy silently drops the omitted scenarios at archive time."
+  design:
+    - "This is the first place implementation detail is allowed. Classes, functions, libraries, schemas and file layout belong here and nowhere upstream."
+    - "Skip design.md for trivial changes and say why in one line. Writing one anyway trains people to ignore them."
+    - "Include a 'Contract conformance' section: how this design satisfies the external API contracts and business rules the intent fixes, field by field where the mapping is not obvious."
+    - "State when your side of a shared contract becomes available to the repositories building against it in parallel."
+    - "Rollback is reverting an image reference in the GitOps repo. Any schema change must stay compatible with the previously deployed image for as long as rollback is possible."
+  tasks:
+    - "Include test tasks. The intent's scenarios and this change's scenarios are the test cases; without them the intent's Acceptance section is not satisfied."
+    - "Put work blocked on another repository in its own group, naming the blocker in the heading, so it is obvious why it is not started."
+    - "Plan only this repository's work. Which repositories take part and what has to land first is stated in the intent."
+    - "Include the GitOps side if deploying this change needs a manifest or image reference change, or note which repository owns it."
+
+operations:
+  apply:
+    guidance:
+      - "The master intent is the contract you implement against, and it is authoritative. If the code cannot satisfy it, the intent is wrong and must be corrected in the shared store - do not silently implement something different."
+      - "Pause and ask if a task turns out to require a contract change or a change in another repository."
+  archive:
+    guidance:
+      - "Archiving here folds this change's specs into this repository's openspec/specs/. It does not archive the master intent."
+      - "Before archiving, check the business rules in the intent's specs/ that this repository is responsible for actually hold against a deployed environment, and that anything you published matches the contract the intent fixed."
+      - "After archiving, this repository is done with the intent. The intent's Fan-out checkbox is ticked from the workflow repo by scripts/intent-gate.sh --tick, which verifies it - never tick it by hand. The intent itself is archived only once every repository has archived its own change."
