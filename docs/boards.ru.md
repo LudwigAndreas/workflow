@@ -175,7 +175,7 @@ ORDER BY Rank ASC
 | Баг (спецификация верна) | Delivery `To Do` | да |
 | Хотфикс | сразу Delivery `In Progress` | да — ретро-spec следом |
 | Техдолг, рутина, подъём зависимости | Delivery `To Do` | да |
-| Спайк | Discovery `In Analysis`, результат — `analysis.md` | н/д — кода не даёт |
+| Спайк | Discovery `In Analysis`, результат питает интент | н/д — кода не даёт |
 | Инфраструктура | Delivery `To Do` (задача GitOps) | обычно да |
 
 Полные правила в [типах работ](./work-types.ru.md).

@@ -12,7 +12,7 @@ mapping is what makes it measurable without a parallel tracking system.
 1 Epic  = N Stories                      a feature too big for one intent
 1 Story = 1 master intent                ← the SDD label lives here
 1 Task  = 1 repo = 1 derived change      ← one branch, one pull request
-        = 1 handoff section
+        = 1 row in the intent's Repositories table
 ```
 
 **Tasks slice the landing, never the intent.** A story's tasks are its
@@ -67,7 +67,7 @@ one repository.
 
 The question that decides it:
 
-> Can `proposal.md` + `specs/` for this be reviewed and approved as a **single
+> Can `intent.md` + `specs/` for this be reviewed and approved as a **single
 > decision**, and does it describe **one** user-facing capability change?
 
 | Answer | Unit |
@@ -77,7 +77,8 @@ The question that decides it:
 | No — several independent capability changes | an **Epic** of several Stories |
 
 **Repositories are not a reason to split a story.** One intent spanning backend
-and frontend is normal and correct — that is exactly what `handoff.md` is for.
+and frontend is normal and correct — that is exactly what the intent's
+Repositories table and System context are for.
 Splitting "users can sign in with SSO" into a backend story and a frontend
 story loses the decision that was actually made, and gives you two specs to
 keep in agreement.
@@ -87,7 +88,7 @@ Symptoms you should have used an Epic:
 - the specs describe two capabilities that could ship independently
 - reviewers keep approving one half and objecting to the other
 - the rollout order has more than about three ordered stages
-- `handoff.md` runs to five or more repository sections
+- the intent's Repositories table runs to five or more rows
 
 Symptoms you split too far:
 

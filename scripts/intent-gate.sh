@@ -11,7 +11,7 @@
 # `openspec archive --yes` only WARNS about unticked boxes and proceeds, and a
 # checkbox is just a character someone typed. This script checks the
 # repositories themselves: an intent is finished when every repository named in
-# handoff.md has an ARCHIVED change linking back to it.
+# intent.md's Fan-out checklist has an ARCHIVED change linking back to it.
 #
 #   --tick   after verifying, tick the Fan-out boxes for repositories that are
 #            genuinely archived. Never ticks anything it could not verify.
@@ -62,15 +62,15 @@ else
   note_fail "openspec validate fails - run: openspec validate $INTENT --store $STORE_ID"
 fi
 
-# --- 3. handoff.md declares the implementing repositories -----------------
-if [ ! -f "$DIR/handoff.md" ]; then
-  note_fail "no handoff.md - the intent never declared which repositories implement it"
+# --- 3. the intent declares the implementing repositories -----------------
+FANOUT=$(intent_fanout_file "$INTENT") || {
+  note_fail "no intent.md - the intent never declared which repositories implement it"
   printf '\n'; fail "GATE FAILED ($FAILED problem(s)) - do not archive"; exit 1
-fi
+}
 
 REPOS=$(intent_fanout_repos "$INTENT")
 if [ -z "$REPOS" ]; then
-  note_fail "handoff.md has no '## Fan-out' checklist - nothing to verify against"
+  note_fail "${FANOUT##*/} has no '## Fan-out' checklist - nothing to verify against"
   printf '\n'; fail "GATE FAILED ($FAILED problem(s)) - do not archive"; exit 1
 fi
 
@@ -84,7 +84,7 @@ while read -r repo key; do
   label=$(printf '%-18s %-10s' "$repo" "$key")
 
   if [ ! -d "$(repo_path "$repo")" ]; then
-    note_fail "${label}no such repository under src/ - handoff.md names one that does not exist"
+    note_fail "${label}no such repository under src/ - the intent names one that does not exist"
     continue
   fi
 
@@ -115,7 +115,7 @@ while read -r repo key; do
   if intent_fanout_ticked "$INTENT" "$repo"; then
     case " $VERIFIED " in
       *" $repo "*) ;;
-      *) note_fail "$repo is ticked in handoff.md but its work is not archived - the checklist is lying" ;;
+      *) note_fail "$repo is ticked in ${FANOUT##*/} but its work is not archived - the checklist is lying" ;;
     esac
   fi
 done <<EOF
@@ -130,7 +130,7 @@ if [ "$TICK" = "1" ] && [ -n "$VERIFIED" ]; then
       dim "  $repo already ticked"
       continue
     fi
-    tmp="$DIR/handoff.md.tmp.$$"
+    tmp="$FANOUT.tmp.$$"
     awk -v want="$repo" '
       /^##[[:space:]]+Fan-out/ { infan=1 }
       infan && /^[[:space:]]*-[[:space:]]*\[[ ]\]/ {
@@ -144,7 +144,7 @@ if [ "$TICK" = "1" ] && [ -n "$VERIFIED" ]; then
         if (probe == want) { sub(/\[[ ]\]/, "[x]", line); print line; next }
       }
       { print }
-    ' "$DIR/handoff.md" > "$tmp" && mv "$tmp" "$DIR/handoff.md" \
+    ' "$FANOUT" > "$tmp" && mv "$tmp" "$FANOUT" \
       && ok "ticked $repo" || warn "could not tick $repo"
   done
 fi

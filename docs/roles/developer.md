@@ -2,8 +2,10 @@
 
 🇬🇧 English | [🇷🇺 Русский](./developer.ru.md)
 
-You own your repository's **derived change**: `proposal.md`, `specs/`,
-`design.md`, `tasks.md`, and the code.
+You own your repository's **change, in full**: `proposal.md`, `specs/`,
+`design.md`, `tasks.md`, and the code. The master intent is the *input* to it,
+not a part of it — analytics establishes the business need and what the outside
+world requires, and you decide what this repository does about it.
 
 **You work in one repository.** You do not need the `workflow` superproject or
 any other team's repo checked out. Your repo's own `openspec/` is
@@ -48,22 +50,27 @@ openspec show <intent-id> --store specifications --json
 
 In this order:
 
-1. **`handoff.md`**, your repository's section — what you own, the contract you
-   must produce or consume, what you depend on, how acceptance is judged. The
-   most important thing you will read.
-2. **`specs/`** — the requirements you implement. Your acceptance is these
-   scenarios, not your reading of the ticket.
-3. **`proposal.md`**, the **Rollout order** — may you start now, or are you
-   waiting on a producer?
-4. **`analysis.md`** — why the system is as it is. Usually where the constraint
-   that makes the obvious approach wrong is recorded.
+1. **`intent.md`**, the **System context** section — the external API
+   contracts in play, the user interface needed, the data obligations. This is
+   what you could not have worked out from inside this repository, and it is
+   the most important thing you will read.
+2. **`specs/`** — the business rules. Your acceptance is these scenarios, not
+   your reading of the ticket.
+3. **`intent.md`**, the **Repositories** table — who else is working on this,
+   and whether you are waiting on any of them.
+4. **`intent.md`**, **Today** and **Constraints** — why the system is as it is.
+   Usually where the constraint that makes the obvious approach wrong is
+   recorded.
+
+What you will **not** find is what to build here. That is yours to decide, and
+writing it down is what `/opsx:propose` is for.
 
 Do not skip this because someone described the ticket in standup.
 
 ## You are working in parallel
 
 Another repository is implementing its half **right now**, against the contract
-published in `handoff.md`. That is what makes this fast, and it is the
+published in the intent. That is what makes this fast, and it is the
 constraint that comes with it:
 
 - **You cannot change a shared contract locally.** If you cannot meet it as
@@ -82,7 +89,8 @@ constraint that comes with it:
 
 | Artifact | Holds |
 |---|---|
-| intent `specs/` | system-boundary behaviour, cross-repo contracts (not yours) |
+| `intent.md` | business need, external contracts, who takes part (not yours) |
+| intent `specs/` | the business rules (not yours) |
 | your `specs/` | behaviour at **your repo's** boundary |
 | `design.md` | how — classes, libraries, schemas, file layout |
 | `tasks.md` | the checklist |
@@ -156,7 +164,7 @@ the scenarios pass against a deployed environment, not just that the code was
 written. An unmet requirement here becomes a false tick on the fan-out, and the
 intent gets archived describing behaviour that does not exist.
 
-Never edit the intent's `handoff.md` by hand. Ticking is done by
+Never edit the intent's Fan-out checklist by hand. Ticking is done by
 `scripts/intent-gate.sh --tick`, which only ticks what it verified.
 
 ## Common mistakes

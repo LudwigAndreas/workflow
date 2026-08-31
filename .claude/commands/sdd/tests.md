@@ -25,11 +25,12 @@ have no test plan yet.
 openspec show <intent-id> --store specifications --json
 ```
 
-Read `specs/` in full — those scenarios are your test cases — and `handoff.md`,
-which tells you which repository is responsible for each requirement and how
-acceptance is judged.
+Read `specs/` in full — those business rules are your test cases — and
+`intent.md`, which tells you what business outcome must be true afterwards,
+which repositories are involved, and what external contracts and UI the change
+has to satisfy.
 
-Read `analysis.md` too. It tells you what the system did *before*, which is
+`intent.md`'s **Today** section tells you what the system did *before*, which is
 where regression cases come from: behaviour that must **not** change is rarely
 written in the specs, because the specs only describe the delta.
 
@@ -40,14 +41,15 @@ For each `### Requirement:` in `specs/`, produce:
 - one case per `#### Scenario:`, named after it, mapped 1:1 so that a failing
   test names the requirement it violates
 - the **regression cases** the scenarios do not mention: existing behaviour in
-  the same area, from `analysis.md` and the archived specs, that must survive
+  the same area, from the intent's Today section and the archived specs, that
+  must survive
 - the **boundary cases** a scenario implies but does not spell out: empty
   collections, maximum lengths, concurrent submissions, repeated retries,
   clock skew, partial failures
 - the **integration cases** that no single repository can verify alone —
-  anywhere `handoff.md` shows one repository producing a contract and another
-  consuming it. These are the cases that catch the mismatch parallel work
-  creates, and nobody else is positioned to write them
+  anywhere the intent shows one repository producing something another
+  consumes, and anywhere an external API contract is involved. These catch the
+  mismatch parallel work creates, and nobody else is positioned to write them
 
 ### 3. Say which layer each case belongs to
 
@@ -56,9 +58,9 @@ at a repository boundary, or end-to-end against a deployed environment. Say
 which repository owns it. A case with no owner does not get written.
 
 Contract tests deserve particular attention: a test that the backend's response
-matches the shape in `handoff.md`, and a test that the frontend renders that
-exact shape, together catch the integration failure **before** the two are ever
-deployed together.
+matches the shape the intent's System context fixes, and a test that the
+frontend renders that exact shape, together catch the integration failure
+**before** the two are ever deployed together.
 
 ### 4. Report gaps in the intent — this is the valuable part
 
@@ -70,7 +72,8 @@ implementation:
 - a `WHEN` that cannot actually be triggered
 - a requirement with no scenario, or only a happy path
 - two scenarios that contradict each other
-- a contract in `handoff.md` too vague to write an assertion against
+- an external contract in the intent's System context too vague to write an
+  assertion against
 
 List them explicitly and tell the user to raise them against the intent. If the
 intent is still open, this feeds straight back into `/sdd:review`. If it has

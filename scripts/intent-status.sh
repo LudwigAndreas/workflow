@@ -4,7 +4,7 @@
 #   scripts/intent-status.sh                 summarise every intent in flight
 #   scripts/intent-status.sh <intent-id>     detail for one intent
 #
-# This reads the repositories themselves rather than trusting handoff.md's
+# This reads the repositories themselves rather than trusting intent.md's
 # checkboxes, so it is the honest answer to "can we archive this yet?".
 # Exit status is 0 whatever it finds - use intent-gate.sh to enforce.
 
@@ -33,8 +33,8 @@ report_intent() {
 
   head1 "$intent  ($jira)$archived_at"
 
-  if [ ! -f "$dir/handoff.md" ]; then
-    warn "no handoff.md yet - the intent is still being authored"
+  if [ ! -f "$dir/intent.md" ] && [ ! -f "$dir/handoff.md" ]; then
+    warn "no intent.md yet - the intent is still being authored"
     dim "  artifacts: $(ls "$dir" 2>/dev/null | tr '\n' ' ')"
     return 0
   fi
@@ -77,7 +77,7 @@ EOF
 
   printf '\n'
   if [ "$total" = "0" ]; then
-    warn "handoff.md declares no repositories in its '## Fan-out' section"
+    warn "intent.md declares no repositories in its '## Fan-out' section"
   elif [ "$done_n" = "$total" ]; then
     ok "$done_n/$total repositories archived - ready to archive the intent"
     dim "  scripts/intent-gate.sh $intent"

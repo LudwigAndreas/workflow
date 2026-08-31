@@ -20,8 +20,8 @@ flight.
 ./scripts/intent-status.sh [<intent-id>]
 ```
 
-This reads the repositories themselves rather than trusting `handoff.md`'s
-checkboxes, so it is the honest answer. It flags three specific lies:
+This reads the repositories themselves rather than trusting the intent's
+Fan-out checkboxes, so it is the honest answer. It flags three specific lies:
 
 - a repository whose work is archived but whose box is not ticked
 - a box ticked while the repository's change is still open
@@ -41,8 +41,8 @@ say which happened rather than reporting a clean bill of health.
 
 | State | Phase | Who acts next |
 |---|---|---|
-| no `analysis.md` | exploring | analytics — `/opsx:explore` |
-| artifacts incomplete | authoring | analytics — `/sdd:intent` |
+| no `intent.md` | exploring | analytics — `/opsx:explore` |
+| `intent.md` incomplete, or no `specs/` | authoring | analytics — `/sdd:intent` |
 | complete, not merged | review | team lead — `/sdd:review` |
 | merged, no derived changes | fan-out | testers and developers start, in parallel (`/opsx:propose` in each repo) |
 | some repositories archived | building | the repositories still open |

@@ -111,7 +111,8 @@ A time-boxed investigation whose output is knowledge. It produces **no code
 that ships** and no spec.
 
 Give it a Jira task with an explicit time box and a written question. Its output
-is a document — most usefully the `analysis.md` of the intent it feeds, since
+is a document — most usefully the **Today** and **System context** sections of
+the intent it feeds, since
 that is exactly the shape a spike's findings take. Running `/opsx:explore` and
 keeping the result *is* the deliverable.
 
@@ -177,6 +178,6 @@ because of this?**
   `specifications`.
 - **Yes** → master intent, authored by analytics, merged before any branch.
 
-When unsure, look at the contracts section of the last relevant `analysis.md`.
+When unsure, look at the System context of the last relevant intent.
 If the thing you are changing appears there with more than one consumer, it is
 an intent.

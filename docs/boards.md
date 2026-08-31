@@ -177,7 +177,7 @@ test-at-the-end and `/sdd:tests` is not being used.
 | Bug (spec already correct) | Delivery `To Do` | yes |
 | Hotfix | Delivery `In Progress` directly | yes — retro-spec follows |
 | Tech debt, chore, dependency bump | Delivery `To Do` | yes |
-| Spike | Discovery `In Analysis`, output is an `analysis.md` | n/a — produces no code |
+| Spike | Discovery `In Analysis`, output feeds an intent | n/a — produces no code |
 | Infrastructure | Delivery `To Do` (GitOps task) | usually |
 
 Full rules in [work types](./work-types.md).

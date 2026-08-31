@@ -1,21 +1,32 @@
 ---
-description: "Analytics: author a master intent - the business source of truth for one Jira story"
+description: "Analytics: author a master intent - the business context a developer feeds into the standard OpenSpec workflow"
 ---
 
-Author a **master intent**: the single business description of one change, from
-which every repository derives its implementation.
+Author a **master intent**: the business source of truth for one Jira story,
+and the prepared context that every affected repository feeds into the standard
+OpenSpec workflow.
 
-This is the one custom step in the whole workflow, and it exists because
-nothing standard fills its place: the intent spans four repositories at once,
-and it must be written before any of them starts. Everything on either side of
-it is the stock OpenSpec workflow — `/opsx-explore` before, and
-`/opsx-propose` → `/opsx-apply` → `/opsx-archive` inside each repository after.
+## What this is, and what it is not
 
-A master intent is one OpenSpec change in the shared `specifications` store,
-with four artifacts: `analysis.md` (what is true today), `proposal.md` (why and
-what), `specs/` (the behaviour contract), `handoff.md` (who implements which
-part). Together they must be complete enough that a backend developer and a
-frontend developer, who never speak to each other, build halves that fit.
+The master intent is a **meta layer above OpenSpec**, not a variant of it.
+
+```
+     ANALYTICS                      DEVELOPER, in their own repo
+  ┌──────────────┐              ┌────────────────────────────────┐
+  │ master intent│ ──────────▶  │ /opsx-propose  ← the intent is │
+  │ intent.md    │   input to   │ /opsx-apply       its input    │
+  │ specs/       │   propose    │ /opsx-archive                  │
+  └──────────────┘              └────────────────────────────────┘
+   business need                  proposal, specs, design, tasks
+   whole-system context           all written and owned by the developer
+```
+
+You write the business need and the whole-system context. The developer writes
+`proposal.md`, their repository's `specs/`, `design.md` and `tasks.md` — all
+four, themselves, with the unmodified OpenSpec workflow. **Never write any of
+them here**, and never write an intent that reads like the first half of one.
+Splitting a single OpenSpec workflow across two roles is exactly what this
+layer exists to avoid.
 
 **Input**: `/sdd-intent <JIRA-KEY>` and/or a description. If you have only a
 key, ask the user to paste the story description — do not invent the intent.
@@ -34,59 +45,45 @@ Ask yourself, and tell the user your answer:
   a Jira **Epic**, split into several Stories, each getting its own intent.
   Propose the split as a list and wait for the user to choose.
 
-The unit is fixed and is what makes the SDD metric work:
-
 ```
 1 Epic  = N stories                 too big for one intent
 1 Story = 1 master intent           <- the SDD label lives here
-1 Task  = 1 repo = 1 branch = 1 PR  <- one derived change per repo
+1 Task  = 1 repo = 1 branch = 1 PR  <- one standard OpenSpec change per repo
 ```
 
 Repositories are **not** the reason to split a story. One intent spanning
-backend and frontend is normal and correct; that is exactly what the handoff
-artifact is for. Never split one capability change across two stories, and
-never bundle two capability changes into one intent to avoid this conversation.
+backend and frontend is normal and correct — that is the whole point of the
+System context and Repositories sections.
 
 ### 2. Establish the baseline, unless you already have
 
 If you have not just run `/opsx-explore` on this area, establish the current
-truth now. Authoring an intent without reading the current baseline produces a
-proposal that contradicts behaviour the system already has.
-
-Read in this order — later sources are more detailed, earlier ones more
-authoritative about intent:
+truth now. An intent written without reading the current business rules
+contradicts behaviour the system already has.
 
 | Question | Source |
 |---|---|
-| How does the system behave today? | `openspec list --specs --store specifications` |
-| Why is it like that? | `specifications/openspec/changes/archive/` |
+| What are the business rules today? | `openspec list --specs --store specifications` |
+| Why are they like that? | `specifications/openspec/changes/archive/` |
 | What is being changed right now? | `./scripts/intent-status.sh` |
 | How is it actually built? | the repositories under `src/` |
 | How does one repo behave at its own boundary? | `src/<repo>/openspec/specs/` |
 
-Two things matter more than the rest and are most often found too late:
-
-- **An open intent touching the same area.** Either this work is part of it, or
-  it must be sequenced against it. Say which, explicitly. Never author a second
-  intent that silently contradicts an open one.
-- **The contracts.** For the area under examination, list every interface more
-  than one repository depends on — HTTP endpoints, event payloads, shared
-  types, config keys — and for each name the producer and **every** consumer.
-  This determines whether the repositories can implement in parallel.
+An open intent touching the same area changes everything: either this work is
+part of it, or it must be sequenced against it. Say which, explicitly.
 
 ### 3. Create the intent
 
 Derive a kebab-case id from the intent itself, not from the Jira key
-(`add-sso-login`, not `proj-123`). If the story already records an id, use that
-exact one.
+(`add-sso-login`, not `proj-123`). If the story already records an id, use it.
 
 ```bash
 openspec new change "<intent-id>" --store specifications
 ```
 
-The store's default schema is `master-intent`, so this scaffolds the four
-artifacts — and refuses `design.md` and `tasks.md`, which belong in the
-implementing repositories.
+The store's default schema is `master-intent`, which defines exactly two
+artifacts — `intent.md` and `specs/` — and refuses `proposal.md`, `design.md`
+and `tasks.md`.
 
 ### 4. Link it to Jira — do not skip this
 
@@ -101,43 +98,61 @@ jira: PROJ-123        # the Story, not a task
 `scripts/check-sdd.sh` fails the intent without it, and `scripts/intent-gate.sh`
 refuses to archive it. If you do not know the key, ask.
 
-### 5. Write the four artifacts, in order
-
-Work through them with `openspec status --change "<intent-id>" --store specifications --json`
-to see what is ready, and for each one:
+### 5. Write the two artifacts
 
 ```bash
+openspec status --change "<intent-id>" --store specifications --json
 openspec instructions <artifact> --change "<intent-id>" --store specifications --json
 ```
 
 Follow the returned `instruction`, `rules` and `template` exactly — they carry
-the altitude rules this store enforces. Re-read completed artifacts from disk
-before writing the next; do not work from memory of what you wrote.
+the altitude rules this store enforces.
 
-1. **`analysis.md`** — strictly descriptive. What is true today, cited to a
-   capability spec or a real file path. An uncited claim is a guess, and a
-   guess here is repeated as fact by every developer downstream.
-2. **`proposal.md`** — why, what changes, the capabilities, the affected
-   repositories table, and the **rollout order**. This store is the only place
-   that sees every repository at once, so it is the only place the ordering can
-   be written down.
-3. **`specs/<capability>/spec.md`** — the behaviour contract. This is the
-   artifact the tester writes tests from and every developer implements
-   against. Scenarios use **exactly four hashtags**; three parses as nothing at
-   all, silently. Every requirement needs at least one unhappy path.
-4. **`handoff.md`** — one section per repository, plus the `## Fan-out`
-   checklist. **Leave every checkbox unticked.**
+1. **`intent.md`** — Business need · Today · What must be true afterwards ·
+   System context · Repositories · Constraints · Open questions · Fan-out.
 
-### 6. Check the handoff covers the specs
+   **System context is the section that justifies this whole layer.** It
+   carries what a developer sitting in one repository could not work out alone:
+   the external API contracts involved — including shapes an outside party has
+   already fixed — the user interface that is needed in terms of what a user
+   must see and do, the data that must be captured or retained, and the events
+   other parties depend on. Attach or link the external contract documents
+   themselves where they exist. State what the outside world requires; never
+   how this system should be built to meet it.
 
-Before reporting, verify by hand: every `### Requirement:` in `specs/` is owned
-by at least one repository section in `handoff.md`. A requirement owned by
-nobody is the single most common way a story ships half-implemented.
+   In **Repositories**, say what each one contributes in business terms, and
+   name the ones ruled out. Do not specify what any repository should build —
+   its own `propose` decides that.
 
-Each repository section must be precise enough to build against **before the
-other side exists**: field names, types, status codes, error cases. A developer
-reading only their own section, in their own repository, with `/opsx-propose`,
-must be able to derive their whole change from it.
+   Leave every **Fan-out** checkbox unticked.
+
+2. **`specs/<capability>/spec.md`** — the delta to the **business rules**. This
+   is what folds into `openspec/specs/` on archive, so the store keeps
+   describing the business rather than accumulating documents. It is also what
+   the tester writes scenarios from and what each developer's `propose` derives
+   their repository's requirements from.
+
+   Business altitude only: rules a user, a customer or another organisation can
+   observe, and rules more than one repository must agree on. Scenarios use
+   **exactly four hashtags**; three parses as nothing, silently. Every
+   requirement needs at least one unhappy path.
+
+   An intent that changes no observable business rule legitimately has none —
+   set `skip_specs: true` rather than inventing one.
+
+### 6. Check it can actually be picked up
+
+Before reporting, read `intent.md` as each developer will: **from their
+repository, with nothing else open**. Ask, per repository:
+
+- Do they know what business outcome they are responsible for?
+- Do they know every external contract and UI requirement that constrains them?
+- Could they run `/opsx-propose` from this document without asking you a
+  question?
+
+Anything that fails those three is a gap in the intent, not something for the
+developer to work out. Every requirement in `specs/` must be plainly the
+responsibility of at least one repository in the Repositories table.
 
 ### 7. Report
 
@@ -150,27 +165,24 @@ Tell the user:
 
 - where the intent lives and which Jira story it is linked to
 - which repositories will implement it, and which may go in parallel
-- the open questions from `analysis.md` that still need an owner
+- the open questions that still need an owner
 - next step: **team lead reviews and merges it** (`/sdd-review`), and
   **no branch may be cut in any repository before that merge** — the metric
   checks the ordering and it cannot be fixed after the fact
 - after the merge each developer works in their own repository with the
-  standard commands: `/opsx-propose` → `/opsx-apply` → `/opsx-archive`
+  standard commands, giving this intent to `/opsx-propose` as its input, then
+  `/opsx-apply` and `/opsx-archive`
 
 ## Guardrails
 
-- **Never write `design.md` or `tasks.md` here.** The store's config refuses
-  them. Implementation detail belongs in the implementing repository, written
-  by the developer who owns it, in their own change.
-- **Never name a class, function, library or framework.** If you cannot
-  describe the requirement without one, you are specifying implementation.
+- **Never write `proposal.md`, `design.md` or `tasks.md`.** All three are the
+  developer's, written in the developer's repository. The store's config
+  refuses them.
+- **Never name a class, function, library, framework or file.** If you cannot
+  state the requirement without one, you are describing a solution.
 - **Never invent an answer to close an open question.** An unknown surfaced now
-  costs a sentence; the same unknown found during implementation costs a
-  re-opened story and a wasted sprint.
+  costs a sentence; found during implementation it costs a re-opened story.
 - **Never tick a Fan-out checkbox when authoring.** They are ticked only as
   each repository archives its work, and `scripts/intent-gate.sh --tick`
   verifies them independently.
 - **Never proceed past an oversized story.** Escalate it as an Epic.
-- **Do not invent requirements to satisfy validation.** If the change has no
-  observable behaviour change, set `skip_specs: true` and write the proposal
-  only.

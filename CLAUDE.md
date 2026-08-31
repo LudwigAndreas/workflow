@@ -11,6 +11,13 @@ unattended.
   `docs/foo.ru.md`, cross-linked at the top with flag links. A new doc is not
   finished until both exist and both appear in the README tables (EN and RU).
 
+- **The master intent is a meta layer above OpenSpec, never a split of it.**
+  Analytics writes `intent.md` + `specs/` — business need, whole-system
+  context, business rules. The developer feeds that into the *unmodified*
+  workflow in their own repo and writes `proposal.md`, `specs/`, `design.md`
+  and `tasks.md` themselves. Never move a developer artifact into the store,
+  and never let analytics write what a repository should build.
+
 - **Do not override the default OpenSpec commands.** Application repositories
   use stock `/opsx:propose`, `/opsx:apply` and `/opsx:archive` with the stock
   `spec-driven` schema. Anything the agent needs to know there goes into
@@ -23,7 +30,7 @@ unattended.
   editing a command, run `make commands`. Never hand-edit a file under
   `.qwen/commands/`. `make commands-check` fails if they have drifted.
 
-- **Never hand-tick a Fan-out checkbox** in an intent's `handoff.md`. Use
+- **Never hand-tick a Fan-out checkbox** in an intent's `intent.md`. Use
   `scripts/intent-gate.sh <id> --tick`, which ticks only what it verified. The
   gate exists precisely to catch hand-ticked boxes.
 

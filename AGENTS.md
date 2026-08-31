@@ -47,17 +47,43 @@ README tables.
 3. **This repo** — has no specs of its own. Its `openspec/config.yaml` sets
    `store: specifications` and delegates entirely.
 
-## One custom schema, one custom step
+## A meta layer, not a modified workflow
 
 The only thing this workflow adds to stock OpenSpec is the **master intent**,
-and it is added in exactly one place.
+and it sits *above* OpenSpec rather than inside it. Analytics writes an intent;
+a developer then feeds that intent into the unmodified OpenSpec workflow in
+their own repository and writes every artifact of it themselves.
 
-**`master-intent`** (in `specifications/openspec/schemas/`) —
-`analysis → proposal → specs → handoff`. It is the store's default schema, so
-`openspec new change <id> --store specifications` scaffolds an intent. Its
-`apply` block tracks `handoff.md`, so the fan-out checklist *is* the intent's
-completion state. The store's config declares `rules` for `design` and `tasks`
-that tell the agent to **stop** and explain rather than create them.
+```
+  ANALYTICS                        DEVELOPER, in one repository
+  master intent   ── input to ──▶  /opsx:propose → /opsx:apply → /opsx:archive
+  intent.md                        proposal.md, specs/, design.md, tasks.md
+  specs/
+```
+
+The intent is never half of a propose. Splitting one OpenSpec workflow across
+two roles — analyst writes the proposal, developer writes the tasks — changes a
+workflow that is already coherently designed and leaves each role holding a
+fragment of a document neither owns. That arrangement was built here once and
+removed.
+
+**`master-intent`** (in `specifications/openspec/schemas/`) — two artifacts,
+`intent → specs`. It is the store's default schema, so `openspec new change
+<id> --store specifications` scaffolds an intent. Its `apply` block tracks
+`intent.md`, whose `## Fan-out` checklist *is* the intent's completion state.
+Because the schema defines only those two, asking for a third is a hard error
+rather than a convention:
+
+```bash
+$ openspec instructions proposal --change <id> --store specifications
+Artifact 'proposal' not found in schema 'master-intent'. Valid artifacts:
+  intent
+  specs
+```
+
+The store's config additionally declares stop-`rules` for `proposal`, `design`
+and `tasks`, which tell an agent *why* they do not belong here rather than only
+that they are missing.
 
 **The application repositories have no custom schema at all.** They use the
 stock `spec-driven` workflow — `proposal → specs → design → tasks` — driven by
@@ -91,7 +117,7 @@ specifications` works from anywhere.
 
 ```yaml
 # specifications/openspec/changes/<intent-id>/.openspec.yaml
-schema: master-intent
+schema: master-intent       # artifacts: intent.md + specs/
 jira: PROJ-123              # the Story
 
 # src/<repo>/openspec/changes/<intent-id>/.openspec.yaml
@@ -110,14 +136,14 @@ changes by scanning `src/*/openspec/changes/**/.openspec.yaml` for a matching
 `openspec archive --yes` prints `Warning: N incomplete task(s) found. Continuing
 due to --yes flag.` and archives anyway. A checkbox is also just a character
 someone typed. So `scripts/intent-gate.sh` verifies against the **repositories
-themselves** that each one named in `handoff.md` has an archived change linking
-back, and refuses otherwise. It also detects three specific inconsistencies:
+themselves** that each one named in the intent's `## Fan-out` checklist has an
+archived change linking back, and refuses otherwise. It also detects three specific inconsistencies:
 
 - work archived but the box not ticked
 - a box ticked while the change is still open
 - a box ticked with no derived change at all
 
-`--tick` ticks only what it has verified. Never hand-edit `handoff.md`.
+`--tick` ticks only what it has verified. Never hand-edit the checklist.
 
 ## Commands: what is custom and what is not
 

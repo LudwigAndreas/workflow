@@ -10,15 +10,18 @@ need is here, plus the shared specification store, which you reach with a flag.
 
 | Question | Source |
 |---|---|
-| Why are we building this, and what must the system do? | the **master intent** in the `specifications` store |
-| Which part of it is mine? | that intent's `handoff.md`, the section for `backend` |
+| Why are we building this, and what must be true for the business? | the **master intent** in the `specifications` store |
+| What does the outside world require — APIs, UI, data? | that intent's **System context** |
+| Which repositories take part? | that intent's **Repositories** table |
+| What does `backend` build about it? | **you decide**, in this change's `proposal.md` |
 | How does **this** repo behave today? | `openspec/specs/` |
-| What am I changing here, and how? | `openspec/changes/<intent-id>/` |
 | Who does it, and when? | Jira |
 
 The master intent is written by analytics and approved by a team lead **before**
-any branch is cut here. It is the business source of truth. This repository's
-`openspec/` holds only this repository's own view.
+any branch is cut here. It is a meta layer that sits *before* propose: it gives
+you the business need and the whole-system context, and you decide what this
+repository does about it. Every artifact of your change — proposal, specs,
+design, tasks — is yours.
 
 Read an intent without leaving this repo:
 
@@ -48,22 +51,22 @@ first, record the backlink, keep to this repository's altitude — lives in
 `openspec/config.yaml` as `context`, `rules` and `operations` guidance, which
 the CLI injects into those default commands. Read it once; it is short.
 
-Start `/opsx:propose` by naming the intent, e.g.
-*"derive backend's change from `add-sso-login`"*, and it will read the intent
+Give the intent to `/opsx:propose` as its input, e.g. *"propose this repo's
+change from the master intent `add-sso-login`"*, and it will read the intent
 from the store before writing anything.
 
 ## Working in parallel
 
 Other repositories are implementing their half of the same intent right now,
-against the contract published in its `handoff.md`. That is what makes this
-fast, and it is also the constraint:
+against the business rules and the external contracts it publishes. That is
+what makes this fast, and it is also the constraint:
 
 - **A shared contract cannot be changed here.** If you cannot meet it as
   published — wrong shape, missing field, impossible ordering — stop and raise
   it against the intent. Do not implement something different; the other side
   is building against the document, and the mismatch surfaces at integration.
-- **Check the rollout order.** The intent's `proposal.md` says whether you may
-  start now or are waiting on another repository to publish first.
+- **Check what has to land first.** The intent says whether you may start now
+  or are waiting on another repository to publish something.
 - **Say when your side is available.** If someone is blocked on you, your
   `design.md` records when they can start.
 
@@ -71,7 +74,9 @@ fast, and it is also the constraint:
 
 | Artifact | Holds | Written by |
 |---|---|---|
-| intent `specs/` | behaviour at the **system** boundary, cross-repo contracts | analytics |
+| `intent.md` | business need, whole-system context, who takes part | analytics |
+| intent `specs/` | the **business rules** — what a user or another organisation observes | analytics |
+| `proposal.md` | what **this repo** does about it | you |
 | this repo's `specs/` | behaviour at **this repo's** boundary | you |
 | `design.md` | how — classes, libraries, schemas, layout | you |
 | `tasks.md` | the checklist | you |

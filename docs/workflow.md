@@ -11,16 +11,17 @@ parallel. This page is the spine: read it first, then your
 ```
                     ┌─────────────────────────────────────────┐
                     │  specifications  (business truth)        │
-   analytics ──1──▶ │  master intent: analysis, proposal,      │
-                    │  specs, handoff                          │
+   analytics ──1──▶ │  master intent: intent.md + specs/       │
+                    │  the META layer, above OpenSpec          │
    team lead ──2──▶ │  reviewed, merged  ◀── the ordering gate │
                     └───────────────┬─────────────────────────┘
                                     │  fan-out, in parallel
               ┌─────────────────────┼─────────────────────┐
               ▼                     ▼                     ▼
         3  tester              4  backend            4  frontend
-        writes tests           derive → plan         derive → plan
-        from specs             → apply → archive     → apply → archive
+        writes tests           propose → apply       propose → apply
+        from specs             → archive             → archive
+                               (standard OpenSpec, the intent as its input)
               │                     │                     │
               └─────────────────────┴─────────────────────┘
                                     │  all repos archived
@@ -41,18 +42,23 @@ Analytics explores the current source of truth with the standard
 `/opsx:explore`, then authors one master intent in the `specifications` store
 with `/sdd:intent`. That authoring step is the **only** custom command in the
 whole flow: it spans every repository at once, which nothing standard does.
-It produces one OpenSpec change with four artifacts:
+It produces one OpenSpec change with two artifacts:
 
 | Artifact | Answers | Altitude |
 |---|---|---|
-| `analysis.md` | What is true **today**? | descriptive only, everything cited |
-| `proposal.md` | Why, what changes, in what order | system: repos, capabilities, contracts |
-| `specs/` | What must the system **do**? | observable behaviour + cross-repo contracts |
-| `handoff.md` | Who implements which part? | per-repo obligations + the fan-out checklist |
+| `intent.md` | Why, what must be true afterwards, what the outside world requires, who takes part | business only, everything cited |
+| `specs/` | Which **business rules** change? | what a user or another organisation observes |
 
-Analytics never writes `design.md` or `tasks.md`. The store's config refuses
-them: technical design needs codebase knowledge an analyst does not have, and
-it belongs to the developer who will implement it.
+The intent is the **input** to each developer's `/opsx:propose` — a meta layer
+that sits before the standard workflow, not a variant of it. Analytics never
+writes `proposal.md`, `design.md` or `tasks.md`; all three are the developer's,
+written in the developer's own repository. The store's schema defines only two
+artifacts, so asking for a third is a hard error rather than a convention.
+
+The section that justifies the whole layer is **System context**: the external
+API contracts in play, the user interface needed, the data obligations, the
+events other parties depend on — the facts a developer sitting in one
+repository could not work out alone.
 
 ### 2. Team lead reviews and merges
 
@@ -96,12 +102,15 @@ the agent reads the master intent first, records the backlink, and keeps to
 this repository's altitude — without anyone forking a command that then drifts
 from upstream OpenSpec.
 
-Backend and frontend proceed **simultaneously**, against the contract published
-in `handoff.md`. That is the point of specifying the contract precisely enough
-to build against before the other side exists.
+Backend and frontend proceed **simultaneously**, against the business rules and
+the external contracts the intent publishes. That is the point of specifying
+those precisely enough to build against before the other side exists.
 
-The intent's `proposal.md` rollout order says who may start immediately and who
-waits for a producer to publish first.
+The intent says who may start immediately and who waits for another repository
+to publish something first.
+
+What each repository *builds* is not in the intent. That is decided in the
+repository's own `proposal.md`, by the developer who owns it.
 
 ### 5. The intent is archived, and becomes the source of truth
 
@@ -117,17 +126,19 @@ scripts/intent-gate.sh <intent-id>
 ```
 
 It verifies against the repositories themselves that each one named in
-`handoff.md` has an **archived** change linking back. `openspec archive --yes`
+the intent's Fan-out checklist has an **archived** change linking back.
+`openspec archive --yes`
 only *warns* about an incomplete fan-out and proceeds — which is exactly why
 the gate exists.
 
-## Source of truth — six questions, six answers
+## Source of truth — seven questions, seven answers
 
 | Question | Single source | Location |
 |---|---|---|
 | What does the system do **today**? | shared specs | `specifications/openspec/specs/` |
 | What are we changing **next**, and why? | master intent | `specifications/openspec/changes/<id>/` |
-| Which part is **mine**? | handoff | that intent's `handoff.md` |
+| What does the outside world require? | master intent | that intent's **System context** |
+| What does **my repo** build about it? | my own proposal | `src/<repo>/openspec/changes/<id>/proposal.md` |
 | How does **one repo** behave? | component specs | `src/<repo>/openspec/specs/` |
 | **How** is it built here? | design + tasks | `src/<repo>/openspec/changes/<id>/` |
 | **Who** does it, when? | Jira | Story / Task |

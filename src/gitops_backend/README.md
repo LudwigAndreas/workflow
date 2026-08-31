@@ -9,10 +9,11 @@ openspec list --store specifications      # master intents in flight
 openspec show <intent-id> --store specifications --json
 ```
 
-Work always derives from an approved **master intent** in the shared
-`specifications` store. Its `handoff.md` says exactly what this repository
-owns, the contract it must produce or consume, what it depends on, and how
-acceptance is judged.
+Work always starts from an approved **master intent** in the shared
+`specifications` store — the business need plus the whole-system context:
+external API contracts, the UI needed, data obligations, and which repositories
+take part. It is the **input** to your proposal, not a substitute for it: what
+this repository builds is yours to decide.
 
 Then cut the branch and use the **standard** OpenSpec commands — this
 repository defines no commands of its own:

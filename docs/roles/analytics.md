@@ -2,8 +2,8 @@
 
 🇬🇧 English | [🇷🇺 Русский](./analytics.ru.md)
 
-You own the **master intent**: `analysis.md`, `proposal.md`, `specs/` and
-`handoff.md`. Everything the team builds comes from what you write.
+You own the **master intent**: `intent.md` and `specs/`. Everything the team
+builds starts from what you write — but you do not write any of it.
 
 ## Your loop
 
@@ -34,17 +34,22 @@ you are the only role that sees the whole system at once while authoring.
 
 | Artifact | Yours? |
 |---|---|
-| `analysis.md`, `proposal.md`, `specs/`, `handoff.md` | **yes** |
-| `design.md`, `tasks.md` | **no** — the implementing developer writes these |
+| `intent.md`, `specs/` | **yes** |
+| `proposal.md`, `design.md`, `tasks.md` | **no** — all three belong to the developer, in their own repository |
 
-The split is not a slight. Technical design needs knowledge of the codebase and
-its conventions, and the person who has it is the person who will write the
-code. The store's config actively refuses `design.md` and `tasks.md`, and will
-tell your agent to stop rather than create them.
+Your intent is the **input** to each developer's `/opsx:propose`, not the first
+half of it. They decide what their repository builds; you establish what the
+business needs and what the outside world requires. The store's schema defines
+only `intent` and `specs`, so asking for a proposal here is a hard error, not a
+matter of discipline.
 
-Your boundary is: **repositories, capabilities and contracts — never classes,
-functions, libraries or frameworks.** If you cannot express a requirement
-without naming one, you are specifying implementation.
+The split is not a slight. Deciding what to build needs knowledge of the
+codebase and its conventions, and the person who has it is the person who will
+write the code.
+
+Your boundary is: **business outcomes, external contracts and the repositories
+that take part — never classes, functions, libraries or frameworks, and never
+"repo X should build Y".**
 
 ## The bar to clear
 
@@ -61,8 +66,8 @@ chat, and an answer given in chat is a decision nobody else sees.
 
 ## Doing it well
 
-**Cite everything in `analysis.md`.** A claim without a spec name or file path
-is a guess, and a guess here is repeated as fact by everyone downstream.
+**Cite everything in Today.** A claim without a business rule or file path is a
+guess, and a guess here is repeated as fact by everyone downstream.
 
 **Name the repositories that will not change**, and say so. It tells a
 developer the area was considered and ruled out rather than forgotten.
@@ -71,10 +76,16 @@ developer the area was considered and ruled out rather than forgotten.
 sentence. The same unknown found during implementation costs a re-opened story
 and, usually, a wasted sprint.
 
-**Over-specify the contract obligations in `handoff.md`.** Field names, types,
-status codes, error cases. "Returns user data" cannot be built against and
-cannot be tested. The developer on the other side cannot ask you, because they
-are working at the same time as you.
+**Over-specify System context.** This is the section that justifies your whole
+layer: the external API contracts in play — field names, types, status codes,
+error cases, and anything a partner has already fixed — the user interface
+needed, the data obligations, the events others depend on. "Returns user data"
+cannot be built against and cannot be tested. The developer on the other side
+cannot ask you, because they are working at the same time as you.
+
+**But stop short of saying what to build.** The Repositories table says what
+each one contributes in business terms. The moment you write "backend adds an
+endpoint that…", you have written someone else's proposal for them.
 
 **Write the unhappy paths.** Every requirement needs at least one. Invalid
 input, expired credentials, missing permissions, empty collections, duplicate
@@ -82,17 +93,21 @@ submissions, dependency down. An all-happy-path intent is the most common
 reason one comes back from review.
 
 **Check the coverage invariant before you submit.** Every `### Requirement:` in
-`specs/` must be owned by at least one repository section in `handoff.md`.
-Compute the union by hand. A requirement owned by nobody is exactly how a story
-ships half-implemented.
+`specs/` must plainly be the responsibility of at least one repository in your
+Repositories table. Compute the union by hand. A requirement owned by nobody is
+exactly how a story ships half-implemented.
+
+**Then read it as a developer would** — from one repository, with nothing else
+open. Could they run `/opsx:propose` from this document without asking you a
+question? If not, that missing fact is yours to add.
 
 ## Sizing
 
 One intent = one capability change, reviewable as a single decision.
 
 Several repositories is **not** a reason to split. One intent spanning backend
-and frontend is normal — that is what `handoff.md` is for. Several *independent
-capability changes* is an Epic of several stories.
+and frontend is normal — that is what the Repositories table and System context
+are for. Several *independent capability changes* is an Epic of several stories.
 
 Full rules: [Jira ↔ SDD](../jira-sdd-mapping.md).
 
@@ -133,7 +148,8 @@ carries the procedure and the gate is what enforces it. Never reach for
 | Mistake | Consequence |
 |---|---|
 | implementation detail in `specs/` | developers cannot choose a sane approach; review stalls |
-| vague contract in `handoff.md` | each repo interprets it differently; fails at integration |
+| writing what a repository should build | you have written the developer's proposal; two documents now disagree |
+| vague external contract in System context | each repo interprets it differently; fails at integration |
 | all-happy-path scenarios | tester rejects it, or worse, does not |
 | a requirement owned by nobody | ships half-implemented |
 | unknowns silently resolved | wrong assumption baked into two repositories |

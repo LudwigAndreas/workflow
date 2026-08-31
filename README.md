@@ -159,7 +159,8 @@ through a gate that reads the repositories themselves:
 make gate INTENT=<intent-id>
 ```
 
-It fails if any repository named in `handoff.md` has not archived a change
+It fails if any repository named in the intent's Fan-out checklist has not
+archived a change
 linking back to the intent, and it names the specific lie when a checkbox
 claims more than reality.
 

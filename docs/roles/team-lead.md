@@ -42,7 +42,7 @@ appears at integration, days later.
 `/sdd:review` walks the full checklist. The items that catch the most:
 
 - **Coverage.** Every requirement in `specs/` owned by at least one repository
-  section in `handoff.md`. Compute the union yourself.
+  repository in the intent's Repositories table. Compute the union yourself.
 - **Contract precision.** Could a developer build against each contract
   obligation *before the other side exists*? If not, send it back — this is the
   single highest-value thing you check.

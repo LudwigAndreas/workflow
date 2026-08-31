@@ -38,13 +38,15 @@ For each `### Requirement:` in the intent's `specs/`:
 - **one case per `#### Scenario:`**, named after it, mapped 1:1 so a failing
   test names the requirement it violates
 - **regression cases** the scenarios do not mention — existing behaviour in the
-  same area that must survive. `analysis.md` and the archived specs are where
+  same area that must survive. The intent's **Today** section and the archived
+  specs are where
   these come from, because the specs only describe the *delta*
 - **boundary cases** a scenario implies but does not spell out: empty
   collections, maximum lengths, concurrent submissions, repeated retries, clock
   skew, partial failures
 - **integration cases** that no single repository can verify alone — wherever
-  `handoff.md` shows one repository producing a contract and another consuming
+  the intent shows one repository producing something another consumes, or an
+  external API contract is in play — that is where
   it
 
 That last category is the one only you are positioned to write, and the one
@@ -52,7 +54,8 @@ that catches what parallel work gets wrong.
 
 ## Contract tests earn their keep
 
-A test that the backend's response matches the shape in `handoff.md`, and a
+A test that the backend's response matches the shape the intent's System
+context fixes, and a
 test that the frontend renders that exact shape, together catch the integration
 failure **before** the two are ever deployed together. Since both sides are
 built in parallel from a written contract, this is where the mismatch will be —
@@ -70,7 +73,7 @@ test you write:
 | a `WHEN` that cannot be triggered | the scenario cannot run |
 | a requirement with no scenario, or only a happy path | untestable, or untested |
 | two scenarios that contradict each other | the intent is ambiguous |
-| a contract in `handoff.md` too vague to assert on | both repos will guess, differently |
+| an external contract in the intent too vague to assert on | both repos will guess, differently |
 
 If the intent is still open, this feeds straight into `/sdd:review`. If it has
 merged, it needs a correction in the store — say so, rather than quietly
@@ -82,7 +85,7 @@ Verify against the **deployed** environment, not a local build: the point is
 that the scenario holds in the system as it actually runs, after Argo CD has
 reconciled it.
 
-Walk the intent's `handoff.md` Acceptance sections. A story is verified when
+Walk the business rules in the intent's `specs/`. A story is verified when
 every scenario in the intent's `specs/` has been exercised — including the
 unhappy paths, which is where verification usually stops short.
 

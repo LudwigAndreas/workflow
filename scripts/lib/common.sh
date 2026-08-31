@@ -124,15 +124,25 @@ intent_dir() {
   return 1
 }
 
-# intent_fanout_repos <intent-id>
-# Print "<repo> <jira-key>" for each entry in handoff.md's "## Fan-out" list.
-# The checklist is the declared set of implementing repositories; the gate
-# checks reality against it rather than trusting the ticks.
-intent_fanout_repos() {
-  local intent=$1 dir handoff
+# intent_fanout_file <intent-id>
+# Path to the file carrying the intent's "## Fan-out" checklist. That is
+# intent.md; handoff.md is accepted as a fallback so intents authored under
+# version 1 of the master-intent schema still gate correctly.
+intent_fanout_file() {
+  local intent=$1 dir
   dir=$(intent_dir "$intent") || return 1
-  handoff="$dir/handoff.md"
-  [ -f "$handoff" ] || return 1
+  if [ -f "$dir/intent.md" ]; then printf '%s\n' "$dir/intent.md"; return 0; fi
+  if [ -f "$dir/handoff.md" ]; then printf '%s\n' "$dir/handoff.md"; return 0; fi
+  return 1
+}
+
+# intent_fanout_repos <intent-id>
+# Print "<repo> <jira-key>" for each entry in the "## Fan-out" list. The
+# checklist is the declared set of implementing repositories; the gate checks
+# reality against it rather than trusting the ticks.
+intent_fanout_repos() {
+  local intent=$1 fanout
+  fanout=$(intent_fanout_file "$intent") || return 1
 
   awk '
     /^##[[:space:]]+Fan-out/ { infan=1; next }
@@ -140,6 +150,8 @@ intent_fanout_repos() {
     infan && /^[[:space:]]*-[[:space:]]*\[[ xX]\]/ {
       line = $0
       sub(/^[[:space:]]*-[[:space:]]*\[[ xX]\][[:space:]]*/, "", line)
+      # Backticks are decoration; the checklist is written both ways.
+      gsub(/`/, "", line)
       key = ""
       if (match(line, /\(([A-Z][A-Z0-9_]*-[0-9]+)\)/)) {
         key = substr(line, RSTART+1, RLENGTH-2)
@@ -151,15 +163,13 @@ intent_fanout_repos() {
       gsub(/^[[:space:]]+|[[:space:]]+$/, "", repo)
       if (repo != "") print repo, (key == "" ? "-" : key)
     }
-  ' "$handoff"
+  ' "$fanout"
 }
 
 # intent_fanout_ticked <intent-id> <repo> - is that repo's box ticked?
 intent_fanout_ticked() {
-  local intent=$1 repo=$2 dir handoff
-  dir=$(intent_dir "$intent") || return 1
-  handoff="$dir/handoff.md"
-  [ -f "$handoff" ] || return 1
+  local intent=$1 repo=$2 fanout
+  fanout=$(intent_fanout_file "$intent") || return 1
   awk -v want="$repo" '
     /^##[[:space:]]+Fan-out/ { infan=1; next }
     infan && /^##[[:space:]]/ { infan=0 }
@@ -174,7 +184,7 @@ intent_fanout_ticked() {
       if (repo == want) { found=1 }
     }
     END { exit(found ? 0 : 1) }
-  ' "$handoff"
+  ' "$fanout"
 }
 
 # ------------------------------------------------------------------- misc ---
