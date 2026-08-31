@@ -2,222 +2,137 @@
 
 🇬🇧 English | [🇷🇺 Русский](./jira-sdd-mapping.ru.md)
 
-This is the contract between our Jira board and our OpenSpec artifacts. It
-exists to answer three questions that used to have no answer: what is a story
-in SDD terms, what gets a branch, and when do you split.
+How Jira issues, OpenSpec changes, branches and the company's SDD metric line
+up. Getting this right is not bookkeeping: the metric is measured, and the
+mapping is what makes it measurable without a parallel tracking system.
 
-It is also what makes the company's **"story followed SDD"** metric passable
-by construction rather than by memory — see [The metric](#the-metric) below.
-
-## The conflation to avoid
-
-Two different things get confused constantly:
-
-- A **spec delta** (one OpenSpec change: `proposal.md` + `specs/*.md`) is a
-  unit of *agreed behavior*.
-- A **branch / PR** is a unit of *code landing in one repo*.
-
-They have different natural sizes. One user-facing feature is one behavior
-decision but touches two or three repos, so it is two or three branches.
-`1 story = 1 branch` can never hold, and forcing it is exactly what makes the
-metric feel unfollowable. Don't force it. Make the **story the spec unit** and
-the **task the branch unit**.
-
-## The invariant
+## The model
 
 ```
-1 Epic  = N stories                    a feature too big for one spec delta
-1 Story = 1 OpenSpec change            = 1 spec delta = 1 review decision
-1 Task  = 1 repo = 1 branch = 1 PR     = 1 "## N. <Repo> (KEY)" section of tasks.md
+1 Epic  = N Stories                      a feature too big for one intent
+1 Story = 1 master intent                ← the SDD label lives here
+1 Task  = 1 repo = 1 derived change      ← one branch, one pull request
+        = 1 handoff section
 ```
 
-The `SDD` label and the `change-id` live on the **Story**. Always. A task never
-carries its own spec delta, and a story never has more than one.
+**Tasks slice the landing, never the intent.** A story's tasks are its
+repository slices. The fix for a too-big story is an **Epic**, not more tasks.
 
-**Tasks slice the landing, never the spec.** A story's tasks are its repo
-slices — Common, Backend, Frontend, GitOps, QA — not "part 1, part 2, part 3"
-of the same work.
+## The metric: "story followed SDD"
 
-## The sizing rule
+A story counts when:
 
-Apply one test at triage, before anything is written:
+1. the story carries the label **`SDD`**, and
+2. a **git branch is named after the story key** — satisfied either by the
+   story itself, or by a task nested inside it, so a child task's branch counts
 
-> **Can `proposal.md` + `specs/*.md` for this be reviewed and approved as a
-> single decision?**
+That is the company's definition. Satisfying it *mechanically* takes a little
+more, and `scripts/check-sdd.sh` asserts all of it:
 
-| Answer | Shape | Who owns the branch |
-|---|---|---|
-| Yes, and it touches one repo | Story with **no children** | the Story |
-| Yes, but it touches several repos | Story + one Task per affected repo | each Task |
-| No — it is several independent capability changes | **Epic**, split into Stories, each with its own OpenSpec change | each Story or its Tasks |
+| Check | Why |
+|---|---|
+| the intent records `jira: PROJ-123` | links the intent to the labelled story |
+| a repo change records `intent:` + `intent_store:` | links the code back to the intent |
+| a repo change records `jira: PROJ-124` | links the code to the task |
+| `openspec validate` passes | the spec is well-formed, not just present |
+| branch matches the naming pattern | Jira can resolve the branch to the issue |
+| **the intent merged before the first commit** | the spec led the code |
 
-The third row is the important one. **The fix for a too-big story is an Epic,
-not more tasks under it.** Once tasks are only ever repo slices, a story is
-always followable, because its task count equals its affected-repo count and
-nothing else. If you find yourself writing "Task 4: second half of the backend
-work", you have hit the third row and should have split the story.
+That last one is what separates *followed SDD* from *labelled SDD*, and it
+**cannot be fixed after the fact**. If a branch was cut before the intent
+merged, the honest answer is that this story did not follow SDD. Rewriting
+history to make the check pass defeats the point of measuring it.
 
-### Worked example — cross-repo
-
-```
-Epic  PROJ-100  "Single sign-on"
- └─ Story PROJ-123  [SDD]  change-id: add-sso-login      <- 1 OpenSpec change
-     ├─ Task PROJ-124  common    branch PROJ-123/PROJ-124-common-sso-types
-     ├─ Task PROJ-125  backend   branch PROJ-123/PROJ-125-backend-sso-endpoint
-     ├─ Task PROJ-126  frontend  branch PROJ-123/PROJ-126-frontend-sso-button
-     └─ Task PROJ-127  qa        (no branch — verifies scenarios)
+```bash
+make check                              # everything in this checkout
+JIRA_URL=... JIRA_TOKEN=... make check  # also assert the SDD label via Jira
 ```
 
-### Worked example — single repo
-
-```
-Story PROJ-140  [SDD]  change-id: fix-session-expiry     <- 1 OpenSpec change
-   branch PROJ-140-fix-session-expiry
-   (no tasks — one repo, so the story owns the branch directly)
-```
+Without `JIRA_URL`/`JIRA_TOKEN` the label checks are **skipped, not passed** —
+the script says so rather than reporting a clean bill of health.
 
 ## Branch naming
 
 ```
-single-repo story:   PROJ-123-sso-login
-multi-repo story:    PROJ-123/PROJ-124-backend-sso-endpoint
+<STORY-KEY>/<TASK-KEY>-<slug>      PROJ-123/PROJ-124-sso-token-endpoint
+<STORY-KEY>-<slug>                 PROJ-123-sso-login      (single-repo story)
 ```
 
-The multi-repo form carries **both keys** deliberately. Jira resolves issue
-keys found anywhere in a branch name, so the branch links to the labelled Story
-*and* to the Task. That means the metric passes whether or not your Jira rolls
-child-task branches up onto the parent story.
+The first form resolves to the labelled **story** *and* the **task**, which is
+what makes a child task's branch count toward the story. Use it whenever tasks
+own the branches — which is the normal case, since most stories span more than
+one repository.
 
-> **Verify this once against the real Jira.** If the development panel already
-> rolls child branches up to the parent story, you can drop the `PROJ-123/`
-> prefix and use plain `PROJ-124-backend-sso-endpoint`. Keep the prefix until
-> someone has actually confirmed the rollup.
+## Sizing: story, task, or epic?
 
-Enforced pattern:
+The question that decides it:
 
-```
-^([A-Z][A-Z0-9]+-[0-9]+/)?[A-Z][A-Z0-9]+-[0-9]+-[a-z0-9-]+$
-```
+> Can `proposal.md` + `specs/` for this be reviewed and approved as a **single
+> decision**, and does it describe **one** user-facing capability change?
 
-## Linking the two systems
+| Answer | Unit |
+|---|---|
+| Yes | **one Story** = one master intent |
+| Yes, but it lands in several repositories | still **one Story**; each repo is a **Task** |
+| No — several independent capability changes | an **Epic** of several Stories |
 
-Exactly one pair of references crosses the boundary. Nothing else is
-duplicated.
+**Repositories are not a reason to split a story.** One intent spanning backend
+and frontend is normal and correct — that is exactly what `handoff.md` is for.
+Splitting "users can sign in with SSO" into a backend story and a frontend
+story loses the decision that was actually made, and gives you two specs to
+keep in agreement.
 
-**In OpenSpec** — `openspec/changes/<change-id>/.openspec.yaml`:
+Symptoms you should have used an Epic:
 
-```yaml
-schema: spec-driven
-created: 2026-08-21
-jira: PROJ-123
-```
+- the specs describe two capabilities that could ship independently
+- reviewers keep approving one half and objecting to the other
+- the rollout order has more than about three ordered stages
+- `handoff.md` runs to five or more repository sections
 
-**In Jira** — the Story records `change-id: add-sso-login`, either in a custom
-field or on its own line in the description.
+Symptoms you split too far:
 
-That is the whole integration. Jira never holds requirement text; specs never
-hold assignees or sprint numbers.
+- a story's spec delta is a single scenario
+- two stories' specs must be read together to make sense
+- one story cannot be verified without the other being deployed
 
-## tasks.md section convention
+## Issue lifecycle and who moves the card
 
-The OpenSpec `tasks.md` template uses numbered groups. Our convention adds the
-repo name and the Jira task key to each group heading:
-
-```markdown
-## 1. Common (PROJ-124)
-
-- [ ] 1.1 Add `SsoAssertion` type and export it
-- [ ] 1.2 Publish package version 2.4.0
-
-## 2. Backend (PROJ-125)
-
-<!-- gated: do not start until 1.2 has published -->
-- [ ] 2.1 Bump common to 2.4.0
-- [ ] 2.2 Implement POST /auth/sso callback
-
-## 3. Frontend (PROJ-126)
-
-<!-- gated: do not start until 1.2 has published -->
-- [ ] 3.1 Bump common to 2.4.0
-- [ ] 3.2 Add SSO button and redirect handling
-```
-
-Two things follow from this. `openspec status --change <id>` and the Jira story
-now report the same progress numbers, because each section is a Jira task. And
-CI can mechanically assert the mapping — that is what `scripts/check-sdd.sh`
-does.
-
-### Contract gating
-
-When a change touches `common` or any shared contract, the
-`## Common` section must land and publish before the consuming sections start.
-Mark the gate in a comment as shown above so it survives review.
-
-## The metric
-
-The company measures **"story followed SDD"**: the story carries the `SDD`
-label and has a branch named after its key, satisfiable by the story itself or
-by tasks inside it.
-
-A story passes when all of the following hold. `scripts/check-sdd.sh` checks
-every item except the first two, and those two as well when `JIRA_URL` and
-`JIRA_TOKEN` are available.
-
-1. The Jira issue is of type **Story**.
-2. It carries the label **`SDD`**.
-3. It records a `change-id`, and that change exists.
-4. The change's `.openspec.yaml` carries the matching `jira:` key.
-5. `openspec validate <change-id>` passes.
-6. Every `tasks.md` section heading carries a Jira task key.
-7. Every such task key has a branch matching the pattern above.
-8. **The spec delta was merged before the first commit on any branch.**
-
-Item 8 is what separates *followed SDD* from *labelled SDD*. If the proposal
-lands after the code, the metric is measuring nothing. Mechanically: the commit
-that added `proposal.md` must be reachable from `origin/main` at the moment the
-feature branch is created.
-
-## Stories with no spec delta
-
-Pure refactors, tooling, dependency bumps and docs changes have no observable
-behavior change, so they have no spec delta. They must not invent a requirement
-just to satisfy validation. Set the escape hatch in the change's
-`.openspec.yaml`:
-
-```yaml
-schema: spec-driven
-created: 2026-08-21
-jira: PROJ-150
-skip_specs: true
-```
-
-The story still carries the `SDD` label, still gets a `change-id`, still gets a
-`tasks.md` with Jira-keyed sections, and still passes the check. It simply has
-`proposal.md` without `specs/`.
-
-## Where the change lives
-
-The Jira mapping is identical either way; only the OpenSpec root differs.
-
-| The story… | Change is authored in | Reached with |
+| Jira state | Means | Moved by |
 |---|---|---|
-| touches only one repo's internals | that repo's `openspec/changes/` | no flag |
-| touches a contract another repo consumes | the shared `specifications` store | `--store specifications` |
+| To Do | intent not written | — |
+| In Analysis | intent being authored | analytics |
+| In Review | intent up for approval | team lead |
+| Ready for Dev | intent merged; branches may be cut | team lead, on merge |
+| In Progress | at least one task in flight | developers |
+| In Testing | deployed; scenarios being verified | tester |
+| Done | all tasks done, intent archived | whoever archives |
 
-See [`AGENTS.md`](../AGENTS.md) § "Where a change gets authored" for the full
-rule and the reasoning behind keeping the shared store small.
+These statuses are the columns of the two team boards — Stories run across the
+Discovery board, Tasks across the Delivery board. See [boards](./boards.md).
 
-## Quick reference
+The story cannot enter **Ready for Dev** before its intent is merged. That
+transition *is* the ordering gate — enforcing it in Jira is what keeps the
+metric honest, because it is the moment developers are allowed to start.
 
-```bash
-# what changes are in flight, and how far along
-openspec list --json
-openspec list --store specifications
+## Fields worth setting
 
-# one change in detail
-openspec show <change-id>
-openspec status --change <change-id> --json
+| Field | Value | Why |
+|---|---|---|
+| Label | `SDD` | the metric reads it |
+| Story: a custom `Intent ID` field | the kebab-case intent id | lets Jira link to the intent |
+| Task: parent | the story | the branch resolves upward to the labelled story |
+| Fix Version | `<service> <semver>` | ties the release back to the story |
 
-# does this repo pass the SDD metric right now
-make check
-```
+If a custom field is not available, put the intent id in the story description
+on its own line as `intent: <intent-id>` — `check-sdd.sh` does not read Jira for
+this, but humans and reviewers do.
+
+## Common failure modes
+
+| Symptom | Cause | Fix |
+|---|---|---|
+| metric fails, everything looks right | no `jira:` in `.openspec.yaml` | add it |
+| repo change invisible to the fan-out | no `intent:` key | add `intent:` and `intent_store:` |
+| gate refuses although work is done | change not archived in its repo | `/opsx:archive` there |
+| gate says "the checklist is lying" | a box was ticked by hand | untick it; use `intent-gate.sh --tick` |
+| ordering check fails | branch cut before the intent merged | not fixable — report it honestly |

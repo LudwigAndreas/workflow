@@ -2,196 +2,170 @@
 
 🇬🇧 English | [🇷🇺 Русский](./developer.ru.md)
 
-For frontend, backend, common, gitops and nginx engineers. You work in **Mode
-B**: cloned into exactly one application repo, IDE and agent rooted there. You
-do **not** need this `workflow` repo, and you do not need any other team's repo
-checked out on disk.
+You own your repository's **derived change**: `proposal.md`, `specs/`,
+`design.md`, `tasks.md`, and the code.
 
-Read [the pipeline](../pipeline.md) and [Jira ↔ SDD mapping](../jira-sdd-mapping.md)
-once first. You own **gates 5 and 6**.
+**You work in one repository.** You do not need the `workflow` superproject or
+any other team's repo checked out. Your repo's own `openspec/` is
+self-sufficient, and `--store specifications` reaches the intent from wherever
+you are.
 
-## What you own
+## Your loop — the standard OpenSpec commands
 
-`design.md` (**how**), `tasks.md` (the step-by-step plan), and the code. You
-write `design.md` and `tasks.md` **always** — whether the proposal came from you
-(local change) or from analytics (shared contract).
+There is nothing custom on your side of this workflow. No forked schema, no
+repo-local `/sdd:*` command: you use stock OpenSpec, and what makes it fit this
+team is your repository's `openspec/config.yaml`.
 
-## One-time machine setup
-
-Clone only your own repo:
-
-```bash
-git clone ssh://git@bitbucket.acme.com/plat/<frontend|backend|...>.git
-cd <your-repo>
+```
+git checkout -b PROJ-123/PROJ-124-<slug>   only after the intent is merged
+/opsx:propose             proposal.md + specs/ + design.md + tasks.md,
+                          recording jira: + intent: in .openspec.yaml
+/opsx:apply               work the checklist
+                          → review, merge, deploy, verify
+/opsx:archive             fold your specs into this repo's openspec/specs/
 ```
 
-Register the shared `specifications` store once per machine — not per repo, and
-not tracked in git, so a new laptop needs it again:
+Qwen Code: `/opsx-propose`, `/opsx-apply`, `/opsx-archive`.
+
+Start `/opsx:propose` by naming the intent — *"derive this repo's change from
+`add-sso-login`"* — and it will read the intent from the store first, because
+`openspec/config.yaml` tells it to. That config carries this team's rules into
+the default commands: read the intent, record the backlink, keep to this
+repository's altitude, remember that rollback is an image revert. It is worth
+reading once, and it is short.
+
+Your board is `Team <name> — Delivery` (Scrum), swimlaned by parent story so you
+can see which other repositories are still outstanding on the same intent. Your
+card is a Task; the Story above it belongs to the Discovery board. See
+[boards](../boards.md).
+
+## Start by reading the intent — all of it
 
 ```bash
-git clone git@github.com:LudwigAndreas/specifications.git ~/dev/specifications
-openspec store register ~/dev/specifications --id specifications
-openspec store list --json      # verify
+openspec list --store specifications
+openspec show <intent-id> --store specifications --json
 ```
 
-From now on, plain `openspec` commands resolve to *your repo's own*
-`openspec/specs` + `openspec/changes`. Adding `--store specifications` reaches
-the shared store from inside your repo without checking out anything else.
+In this order:
 
-## Two shapes of work
+1. **`handoff.md`**, your repository's section — what you own, the contract you
+   must produce or consume, what you depend on, how acceptance is judged. The
+   most important thing you will read.
+2. **`specs/`** — the requirements you implement. Your acceptance is these
+   scenarios, not your reading of the ticket.
+3. **`proposal.md`**, the **Rollout order** — may you start now, or are you
+   waiting on a producer?
+4. **`analysis.md`** — why the system is as it is. Usually where the constraint
+   that makes the obvious approach wrong is recorded.
 
-Work out which one **before** touching OpenSpec.
+Do not skip this because someone described the ticket in standup.
 
-| | Touches only your repo | Touches a contract another repo consumes |
-|---|---|---|
-| Example | internal refactor, bug fix, repo-local feature | new/changed API between FE and BE, a shared event, anything `common` publishes |
-| Proposed in | your repo, no `--store` flag | `specifications` — authored by analytics, not you |
-| Who writes `proposal.md` + `specs/*.md` | you | analytics |
-| Who writes `design.md` + `tasks.md` | **you** | **you** |
+## You are working in parallel
 
-If your story needs a contract that nobody has proposed yet, don't write the
-contract spec yourself — ask analytics. They hold the cross-repo context needed
-to negotiate it correctly, and planning against an unagreed contract just means
-redoing the work.
+Another repository is implementing its half **right now**, against the contract
+published in `handoff.md`. That is what makes this fast, and it is the
+constraint that comes with it:
 
-## Gate 5 — plan
+- **You cannot change a shared contract locally.** If you cannot meet it as
+  published — wrong shape, missing field, impossible ordering, conflicts with
+  something deployed — **stop and raise it against the intent**. It is
+  corrected in the store, once, for everyone. Implementing something different
+  surfaces as an integration failure days later, and the other team will have
+  built the published version.
+- **Say when your side is available.** If someone is blocked on you, record it
+  in `design.md` under Contract conformance. They are waiting on that date.
+- **Build against the contract, not against the other repo's code.** You should
+  be able to finish before it exists. If you cannot, the contract is
+  underspecified — that is a finding, raise it.
 
-Your story's spec delta is already merged (gate 4). Now:
+## Altitude — what goes where
 
-```bash
-openspec instructions design --change <id> [--store specifications] --json
-openspec instructions tasks  --change <id> [--store specifications] --json
+| Artifact | Holds |
+|---|---|
+| intent `specs/` | system-boundary behaviour, cross-repo contracts (not yours) |
+| your `specs/` | behaviour at **your repo's** boundary |
+| `design.md` | how — classes, libraries, schemas, file layout |
+| `tasks.md` | the checklist |
+
+Test for your component specs: if another repository would have to change
+because a requirement changed, it belongs in the intent, not here. If your repo
+could be rewritten in another language and the requirement would still hold, it
+belongs here.
+
+Having **no** component specs is legitimate — set `skip_specs: true` rather
+than inventing a requirement to satisfy validation.
+
+`design.md` is the first place implementation detail is allowed, and the only
+place. Skip it entirely for a trivial change and say why in one line; writing
+one anyway trains everyone to stop reading them.
+
+## The links that must be recorded
+
+In `openspec/changes/<intent-id>/.openspec.yaml`, before you write anything
+else:
+
+```yaml
+schema: spec-driven
+jira: PROJ-124              # THIS repo's Task, not the Story
+intent: <intent-id>         # the master intent
+intent_store: specifications
 ```
 
-Or just run `/sdd:plan <change-id>`, which wraps both and enforces the section
-convention.
+Without them your work is invisible to the fan-out and blocks the intent's
+archive.
 
-**`design.md`** — write it when the change is cross-cutting, adds a dependency,
-involves a migration, or has a non-obvious approach. Skip it for a small local
-change; don't manufacture ceremony.
+Branch: `<STORY-KEY>/<TASK-KEY>-<slug>`, e.g.
+`PROJ-123/PROJ-124-sso-token-endpoint`. It resolves to the labelled story *and*
+your task, which is what the metric needs.
 
-**`tasks.md`** — one numbered section per affected repo, each carrying its Jira
-task key:
+**The intent must be merged before you cut the branch.** The metric records the
+ordering and it is not fixable afterwards.
+
+## Tasks and tests
+
+The intent's scenarios and your own component scenarios **are** the test cases.
+A `tasks.md` with no test tasks does not satisfy the intent's Acceptance
+section — and the tester is already writing against those same scenarios, so
+you will find out.
+
+Put work blocked on another repository in its own group, naming the blocker in
+the heading, so it is obvious why it is not started:
 
 ```markdown
-## 1. Common (PROJ-124)
-
-- [ ] 1.1 Add `SsoAssertion` type and export it
-- [ ] 1.2 Publish package version 2.4.0
-
-## 2. Backend (PROJ-125)
-
-<!-- gated: do not start until 1.2 has published -->
-- [ ] 2.1 Bump common to 2.4.0
-- [ ] 2.2 Implement POST /auth/sso callback
+## 4. Blocked on backend publishing the token endpoint
 ```
 
-The Jira key in the heading is not decoration — `scripts/check-sdd.sh` asserts
-it, and it's what makes the story's Jira progress and `openspec status` agree.
+## Deployment and rollback
 
-Push the planning commit and have the tech lead look at it before you start
-coding. A wrong approach caught here costs an hour; caught at PR review it
-costs a sprint.
+Deployment is Argo CD reconciling the GitOps repository: a pipeline writes an
+image reference and Argo rolls it out. Nothing applies manifests directly.
 
-## Gate 6 — apply
+**Rollback means reverting an image reference.** Any schema change must stay
+compatible with the previously deployed image for as long as rollback is
+possible. Say in `design.md` how long that window is — this is the detail most
+often missed, and it is the one that makes a rollback impossible at 2am.
 
-**Branch naming** — this is part of the metric, not a style preference:
+## Finishing
 
-```
-single-repo story (no tasks):   PROJ-140-fix-session-expiry
-multi-repo story (your task):   PROJ-123/PROJ-125-backend-sso-endpoint
-```
+`/opsx:archive` archives your change into your repo's `openspec/specs/`. It does
+**not** archive the master intent — that happens once every repository is done,
+and is gated separately.
 
-Both keys in the multi-repo form, so the branch links to the Story *and* your
-Task.
+Before you archive, check the intent's Acceptance criteria are genuinely met —
+the scenarios pass against a deployed environment, not just that the code was
+written. An unmet requirement here becomes a false tick on the fan-out, and the
+intent gets archived describing behaviour that does not exist.
 
-Then:
+Never edit the intent's `handoff.md` by hand. Ticking is done by
+`scripts/intent-gate.sh --tick`, which only ticks what it verified.
 
-- If your task depends on a `common` contract, **wait for it to publish**, then
-  bump your dependency. Don't start against unpublished code — that's what the
-  gate comment in `tasks.md` means.
-- Run `/opsx-apply` to work `tasks.md` top to bottom with the agent. It marks
-  each task `[x]` as it completes and pauses on anything ambiguous. Don't let it
-  guess past unclear requirements — an ambiguous spec is a gate-3 failure worth
-  reporting, not something to improvise around.
-- Feature branch → PR against **your own repo** → review → CI → **squash
-  merge**. The PR title is a conventional commit — `feat(auth): add SSO
-  callback` — because it becomes the only commit on `main`, and the release
-  pipeline reads it.
+## Common mistakes
 
-Run `make check` before opening the PR to confirm you'll pass the metric.
-
-## Gate 9 handoff
-
-The tester verifies every scenario in `specs/*.md` against the **deployed dev
-environment**, not against your branch — and Jira tells them it is ready
-without anyone asking. If a
-scenario can't be exercised, that's a real finding — either the code doesn't
-match the spec or the spec was wrong. Both are worth knowing before archive.
-
-## After the merge — gates 7–11
-
-**Merging your PR is your last action on the story.** Everything after it is
-automated; see [release.md](../release.md).
-
-| Gate | What happens | You |
-|---|---|---|
-| 7 | version computed, tag + image built, Jira Fix Version stamped | nothing |
-| 8 | GitOps rolls `dev`, the ticket comments itself | nothing |
-| 9 | tester verifies against `dev` | answer questions |
-| 10 | staging automatically; prod on the tech lead's approval | nothing |
-| 11 | archive | below |
-
-The one thing this puts on you: **your commit type decides the version.**
-`fix:` is a patch, `feat:` a minor, `feat!:` a major that every consumer must
-react to. There is no later place to correct it — a wrong type ships a version
-number that lies.
-
-Once the change is running **in production** in every affected repo:
-
-```bash
-/opsx:archive <change-id>                          # local-only change
-/opsx:archive <change-id> --store specifications   # shared contract
-```
-
-**For a contract change, wait until every consuming repo is in production**
-before archiving — not the moment your own half is merged.
-
-## Status, without leaving your repo
-
-```bash
-openspec list   --store specifications
-openspec show   <change-id> --store specifications
-openspec status --change <change-id> --store specifications --json
-```
-
-## Commands
-
-| Command | When |
+| Mistake | Consequence |
 |---|---|
-| `/opsx-explore` | think through requirements or an approach before committing |
-| `/sdd:intake` | start a local-only change (proposal + specs) |
-| `/sdd:plan` | write `design.md` + `tasks.md` with Jira-keyed sections |
-| `/opsx-apply` | work `tasks.md` end-to-end, one task at a time |
-| `/sdd:gate` | check metric readiness before opening a PR |
-| `/opsx-archive` | close out a shipped change |
-
-## What you must not do
-
-- **Don't author `proposal.md`/`specs/*.md` for a cross-repo contract.** Loop in
-  analytics rather than guessing at the contract.
-- **Don't start a branch before the spec delta is merged.** It fails the metric
-  and can't be fixed afterwards.
-- **Don't submodule `common` into frontend or backend.** Depend on its published
-  package version; submoduling forces both sides into lockstep.
-- **Don't start a consuming section before `## Common` has published.**
-- **Don't move the `specifications` submodule pointer in the workflow repo
-  casually** — that pin is release tooling's concern.
-
-## Troubleshooting
-
-- `openspec doctor` — sanity-checks your OpenSpec root/store setup.
-- Store not found: re-run the one-time registration. It's per-machine and isn't
-  tracked in git.
-- `make check` fails on branch pattern: rename the branch; see
-  [Jira ↔ SDD mapping](../jira-sdd-mapping.md#branch-naming).
+| starting before the intent merged | the story cannot count toward the metric |
+| reinterpreting a contract locally | integration failure; the other team built the published version |
+| copying the intent's business case into your proposal | two copies that drift |
+| putting system-level behaviour in your component specs | duplicated truth, two places to update |
+| `tasks.md` with no test tasks | acceptance not satisfied; the tester finds out |
+| archiving unmerged work | archives something nobody else can see |

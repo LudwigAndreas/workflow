@@ -1,42 +1,38 @@
 # gitops_frontend
 
-**Placeholder.** Deployment manifests and pipelines for the frontend service.
+Argo CD desired state for the frontend — one repository of a multirepo, spec-driven application.
 
-This is a reference scaffold, not a real repository yet — it has no git
-remote of its own. When the real `gitops_frontend` repository exists, promote this
-placeholder from the workflow repo root:
+## Getting started
 
 ```bash
-scripts/add-repo.sh gitops_frontend <git-url>
+openspec list --store specifications      # master intents in flight
+openspec show <intent-id> --store specifications --json
 ```
 
-That replaces this directory with a real `git submodule` pointing at the
-real repo. Carry the `openspec/` shape below over into the real repo as-is.
+Work always derives from an approved **master intent** in the shared
+`specifications` store. Its `handoff.md` says exactly what this repository
+owns, the contract it must produce or consume, what it depends on, and how
+acceptance is judged.
 
-## OpenSpec (Mode B — work here, not in the workflow repo)
+Then cut the branch and use the **standard** OpenSpec commands — this
+repository defines no commands of its own:
 
-This repo owns its own specs: `openspec/specs/` and `openspec/changes/`.
-Open your IDE/agent directly in this repo for day-to-day work — `openspec`
-commands run here resolve to *this repo's own* specs automatically, no flags
-needed.
+```
+git checkout -b PROJ-123/PROJ-124-<slug>
+/opsx:propose              proposal + specs + design + tasks  (/opsx-propose on Qwen)
+/opsx:apply                implement                          (/opsx-apply)
+/opsx:archive              fold specs into openspec/specs/    (/opsx-archive)
+```
 
-`openspec/config.yaml` also declares a **reference** to the shared
-`specifications` store, for cross-cutting contracts only (things another
-repo must agree on, e.g. the API between frontend and backend). To use it:
+## Layout
 
-1. Once per machine, clone `specifications` somewhere and register it:
-   ```bash
-   git clone git@github.com:LudwigAndreas/specifications.git ~/dev/specifications
-   openspec store register ~/dev/specifications --id specifications
-   ```
-2. From inside this repo, reach a shared cross-repo change directly, without
-   leaving this repo or checking out any other:
-   ```bash
-   openspec list --store specifications
-   openspec show <change-id> --store specifications
-   openspec status --change <change-id> --store specifications --json
-   ```
+```
+openspec/
+  specs/            how this repository behaves today
+  changes/          work in flight, each linked to a master intent
+  config.yaml       repo context + the rules the default commands follow
+.claude/ .qwen/     the stock opsx commands for both CLIs
+```
 
-See the workflow repo's `AGENTS.md` for the full model (when a change
-belongs here locally vs. in the shared store, and how frontend/backend stay
-in sync without submoduling each other).
+See [`AGENTS.md`](./AGENTS.md) for the full workflow, the altitude rules, and
+the Jira/branch conventions the SDD metric depends on.

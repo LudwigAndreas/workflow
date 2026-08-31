@@ -1,145 +1,140 @@
-# Analytics / architecture
+# Analytics
 
 🇬🇧 English | [🇷🇺 Русский](./analytics.ru.md)
 
-You turn a story's intent into an agreed, reviewable statement of behavior. You
-work in **Mode A** — this `workflow` repo, every application repo checked out as
-a submodule side by side — so a change spanning several repos can be scoped with
-full context. You **never** touch `src/*` code.
+You own the **master intent**: `analysis.md`, `proposal.md`, `specs/` and
+`handoff.md`. Everything the team builds comes from what you write.
 
-Read [the pipeline](../pipeline.md) and [Jira ↔ SDD mapping](../jira-sdd-mapping.md)
-once first. You own **gate 2**, and usually drive **gate 11**.
+## Your loop
 
-## What you own
-
-`proposal.md` (**why**) and `specs/*.md` (**what** — observable behavior,
-requirements, scenarios). That is your entire output.
-
-You do **not** write `design.md` or `tasks.md`. This isn't status — it's that
-they require knowledge of the target codebase's patterns and conventions that
-you don't have in front of you, so a draft from you gets rewritten by the
-implementing developer anyway. It's also enforced: `openspec/config.yaml`
-declares `rules:` for both artifacts telling any agent to stop after `specs`
-during initial proposal drafting.
-
-## Setup
-
-```bash
-git clone --recurse-submodules <this-repo-url> workflow
-cd workflow
-make init      # submodules + register the shared "specifications" store
-make doctor
-make sync      # before starting any new work
+```
+/opsx:explore <area>     understand what is true today   (standard OpenSpec)
+/sdd:intent <JIRA-KEY>   write the four artifacts        (the one custom step)
+                         → team lead reviews (/sdd:review)
+                         → merged, and only then do branches appear
 ```
 
-## What belongs in `specifications` — and what doesn't
+`/sdd:intent` is the only command in this workflow that replaces nothing
+standard — it exists because a master intent spans every repository at once,
+which no stock command does. Exploration before it is the ordinary
+`/opsx:explore`; implementation after it is the ordinary `/opsx:propose`,
+`/opsx:apply` and `/opsx:archive`, run by developers in their own repositories.
 
-The shared store holds **only cross-cutting capabilities**: contracts more than
-one repo must agree on — the API between frontend and backend, shared events,
-anything `common` publishes. It is kept deliberately small.
+Your board is `Team <name> — Discovery` (Kanban): `To Do` → `In Analysis` →
+`In Review` → `Ready for Dev`. Respect its WIP limits — they exist to keep you
+exactly one sprint ahead of delivery, because an intent written months early
+goes stale as the shared baseline moves underneath it. See
+[boards](../boards.md).
 
-If a story turns out to be single-repo, it is **not yours to propose**. Hand it
-to that repo's developer; they propose and apply entirely inside their own repo
-and you have no role in that path at all.
+You work in the `workflow` repo, where the shared store and every application
+repository are checked out side by side. That cross-repo view is the point:
+you are the only role that sees the whole system at once while authoring.
 
-## Gate 2 — writing the proposal
+## What you own, and what you must not write
 
-**1. Pick up the story.** It arrives from the team lead already sized, labelled
-`SDD`, and carrying a `change-id`. If it isn't sized — if it reads like several
-independent capability changes — send it back rather than proposing something
-no one can plan.
-
-**2. Pull the affected repos into one view** instead of juggling directories:
-
-```bash
-openspec workset create <name>
-openspec context --code-workspace ws.code-workspace
-```
-
-**3. Create the change** using the `change-id` the team lead reserved:
-
-```bash
-openspec new change <change-id>          # local repo
-openspec new change <change-id> --store specifications   # cross-repo
-```
-
-Record the story key in `openspec/changes/<change-id>/.openspec.yaml`:
-
-```yaml
-schema: spec-driven
-created: 2026-08-21
-jira: PROJ-123
-```
-
-**4. Draft.** Run `/sdd:intake` (or `/opsx-propose`) against the store. It
-generates `proposal.md` and `specs/*.md`. **Stop there** — let the config rules
-halt it before `design.md` and `tasks.md`.
-
-**5. Write scenarios like a tester will read them**, because one will, at gate
-3. Each requirement needs at least one `#### Scenario:` with `WHEN`/`THEN`. Keep
-them observable — no class names, no library choices, no implementation steps.
-
-**6. Open a PR** against `specifications` (or the local repo). A change with
-only `proposal.md` + `specs/` passes `openspec validate` and is mergeable;
-`design`/`tasks` show as "blocked"/"ready", not errors, so there is no need to
-fake them to get merged.
-
-## Gate 3 handoff
-
-The tester reviews your scenarios before the tech lead approves. Expect edge
-cases to come back — that is the cheapest possible moment to find them, and a
-scenario added here costs minutes instead of a re-opened story.
-
-## Gate 5 handoff
-
-Once merged, tell the affected repos' developers the change is ready to plan.
-**They** write `design.md` and `tasks.md`. You don't chase them; they can
-discover the change themselves:
-
-```bash
-openspec list --store specifications
-openspec instructions design --change <id> --store specifications --json
-```
-
-## Tracking progress
-
-```bash
-openspec list   --store specifications
-openspec show   <change-id> --store specifications
-openspec status --change <change-id> --store specifications --json
-```
-
-`isComplete: false` is **expected** until a developer adds `tasks.md`. It means
-"not ready for apply yet", not "something is wrong".
-
-## Gate 11 — archiving
-
-Once **every** consuming repo has merged and deployed its side:
-
-```bash
-/opsx-archive <change-id> --store specifications
-```
-
-This moves the change to `changes/archive/` and syncs
-`specifications/openspec/specs/*` to the new canonical truth — the thing future
-proposals build on. Confirm all sides have shipped, not just the fast one;
-archiving early makes the canonical spec claim something that isn't true
-everywhere yet.
-
-## Commands
-
-| Command | When |
+| Artifact | Yours? |
 |---|---|
-| `/opsx-explore` | think through a story before committing to anything — writes nothing |
-| `/sdd:intake` | story description → proposal + spec deltas, stops before design/tasks |
-| `/opsx-update` | revise proposal/specs after review feedback, keeping them coherent |
-| `/opsx-archive` | close out a shipped change |
+| `analysis.md`, `proposal.md`, `specs/`, `handoff.md` | **yes** |
+| `design.md`, `tasks.md` | **no** — the implementing developer writes these |
 
-## What you must not do
+The split is not a slight. Technical design needs knowledge of the codebase and
+its conventions, and the person who has it is the person who will write the
+code. The store's config actively refuses `design.md` and `tasks.md`, and will
+tell your agent to stop rather than create them.
 
-- **Don't write `design.md` or `tasks.md`**, even when you're sure of the
-  approach. It's the implementing developer's call.
-- **Don't touch `src/*` code.**
-- **Don't put repo-internal specs into `specifications`.** Repo-local concerns
-  belong in that repo's own `openspec/specs/`.
-- **Don't archive before every consuming repo has shipped.**
+Your boundary is: **repositories, capabilities and contracts — never classes,
+functions, libraries or frameworks.** If you cannot express a requirement
+without naming one, you are specifying implementation.
+
+## The bar to clear
+
+Your intent must let a tester and several developers start **at the same time,
+without talking to each other**. Concretely:
+
+- a backend developer can build the endpoint without asking what the frontend
+  expects
+- a frontend developer can build the screen before the endpoint exists
+- a tester can write assertions before either exists
+
+Anything a developer needs but cannot find in your intent becomes a question in
+chat, and an answer given in chat is a decision nobody else sees.
+
+## Doing it well
+
+**Cite everything in `analysis.md`.** A claim without a spec name or file path
+is a guess, and a guess here is repeated as fact by everyone downstream.
+
+**Name the repositories that will not change**, and say so. It tells a
+developer the area was considered and ruled out rather than forgotten.
+
+**Never invent an answer to close an unknown.** An unknown you surface costs a
+sentence. The same unknown found during implementation costs a re-opened story
+and, usually, a wasted sprint.
+
+**Over-specify the contract obligations in `handoff.md`.** Field names, types,
+status codes, error cases. "Returns user data" cannot be built against and
+cannot be tested. The developer on the other side cannot ask you, because they
+are working at the same time as you.
+
+**Write the unhappy paths.** Every requirement needs at least one. Invalid
+input, expired credentials, missing permissions, empty collections, duplicate
+submissions, dependency down. An all-happy-path intent is the most common
+reason one comes back from review.
+
+**Check the coverage invariant before you submit.** Every `### Requirement:` in
+`specs/` must be owned by at least one repository section in `handoff.md`.
+Compute the union by hand. A requirement owned by nobody is exactly how a story
+ships half-implemented.
+
+## Sizing
+
+One intent = one capability change, reviewable as a single decision.
+
+Several repositories is **not** a reason to split. One intent spanning backend
+and frontend is normal — that is what `handoff.md` is for. Several *independent
+capability changes* is an Epic of several stories.
+
+Full rules: [Jira ↔ SDD](../jira-sdd-mapping.md).
+
+## Mechanics that fail silently
+
+Worth checking by hand every time, because nothing will error:
+
+- scenarios use **exactly four hashtags** — three parses as nothing at all
+- new capabilities open with `## Purpose`, 50+ characters
+- `MODIFIED` requirements copy the **entire** original block, scenarios
+  included — a partial copy silently deletes the rest at archive time
+
+## After the merge
+
+You are not finished. Two things remain yours:
+
+- **Answer contract questions fast.** A developer blocked on an ambiguity is
+  blocked for the whole team, because the other repository is building against
+  the same sentence.
+- **Own the correction.** If a developer finds the contract cannot be met,
+  the intent is wrong and it is corrected in the store — by you, before either
+  side implements something different.
+
+You usually also archive the intent, once every repository is done:
+
+```bash
+make gate INTENT=<intent-id>          # refuses while any repo is outstanding
+scripts/intent-gate.sh <id> --tick    # ticks only what it verified
+openspec archive <id> --store specifications
+```
+
+Archiving is the plain OpenSpec command, deliberately — the store's config
+carries the procedure and the gate is what enforces it. Never reach for
+`--yes`: that flag skips exactly the warning the gate exists to make binding.
+
+## Common mistakes
+
+| Mistake | Consequence |
+|---|---|
+| implementation detail in `specs/` | developers cannot choose a sane approach; review stalls |
+| vague contract in `handoff.md` | each repo interprets it differently; fails at integration |
+| all-happy-path scenarios | tester rejects it, or worse, does not |
+| a requirement owned by nobody | ships half-implemented |
+| unknowns silently resolved | wrong assumption baked into two repositories |
+| ticking a Fan-out box | the gate catches it and says the checklist is lying |

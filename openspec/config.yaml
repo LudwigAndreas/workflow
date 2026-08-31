@@ -1,2 +1,36 @@
-schema: spec-driven
+schema: master-intent
 store: specifications
+
+# This repo has no specs of its own. It is the cross-repo AUTHORING view:
+# the shared specification store plus every application repository, checked out
+# together, so an analyst can see the whole system while writing a master
+# intent. Every OpenSpec command run from here delegates to the shared
+# `specifications` store above.
+#
+# Developers do not work here. They work in a single application repository,
+# and reach the store with `--store specifications` when they need it.
+
+context: |
+  This is the cross-repo AUTHORING view. Every OpenSpec command run from here
+  acts on the shared `specifications` store, whose default schema is
+  `master-intent`.
+
+  The workflow, end to end:
+
+    /opsx:explore              analytics thinks through the area (standard)
+    /sdd:intent <JIRA-KEY>     analytics writes the master intent (the one
+                               custom step - it spans every repository)
+    /sdd:review <intent-id>    team lead approves, then it is merged
+    /sdd:tests  <intent-id>    tester writes the plan from specs/, before code
+    ... then, inside each application repository, the STANDARD commands:
+    /opsx:propose -> /opsx:apply -> /opsx:archive
+    ... and once every repository has archived:
+    make gate INTENT=<id> && openspec archive <id> --store specifications
+
+  Application repositories are checked out under src/ as submodules so an
+  analyst can see the whole system while writing an intent. Developers do not
+  work here; they work in a single repository, and reach the store with
+  `--store specifications`.
+
+  Never write design.md or tasks.md into the store - implementation detail
+  belongs to the repository that implements it.

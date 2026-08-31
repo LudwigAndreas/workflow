@@ -2,52 +2,61 @@
 
 🇬🇧 English | [🇷🇺 Русский](./README.ru.md)
 
-Reference/starter configuration for enterprise, spec-driven development across
-a multirepo application, using [OpenSpec](https://github.com/Fission-AI/OpenSpec)
-and mapped onto an Agile/Scrum Jira board.
+Reference configuration for enterprise **spec-driven development** across a
+multirepo application, using [OpenSpec](https://github.com/Fission-AI/OpenSpec),
+mapped onto a Jira board, and driveable from **both Claude Code and Qwen Code**.
 
-Built for **Bitbucket Data Center + Jenkins + Argo CD**. The Jenkins pipelines
-live here as a shared library (`vars/`); each repo carries a five-line
-`Jenkinsfile`.
+Built for **Bitbucket Data Center + Jenkins + Argo CD**.
 
-**Start here: [`docs/pipeline.md`](./docs/pipeline.md)** — one diagram, six
-roles, eleven gates in three phases, and the answer to "where is the source of
-truth".
+**Start here: [`docs/workflow.md`](./docs/workflow.md)** — one diagram, five
+stages, and the answer to "where is the source of truth".
 
-It covers the whole loop, not just the specs: intent → proposal → approval →
-code → **version, tag, image, deploy, Jira Fix Version, deploy comment,
-promotion, archive**. Everything from the merge onward is automated; a
-developer's last action on a story is merging a PR.
-
-**If you're a frontend/backend/etc. developer**, you probably don't need this
-repo at all — clone your own app repo and read
-[`docs/roles/developer.md`](./docs/roles/developer.md). This repo is for
-authoring proposals that span multiple repos, and for pinning which combination
-of repo versions ships together.
-
-## The model in nine lines
+## The idea in one picture
 
 ```
-1 Epic  = N stories                    a feature too big for one spec delta
-1 Story = 1 OpenSpec change            = 1 spec delta   <- SDD label + change-id
-1 Task  = 1 repo = 1 branch = 1 PR     = 1 tasks.md section
+analytics writes ONE master intent  ──▶  team lead merges it
+                                              │
+                         ┌────────────────────┼────────────────────┐
+                         ▼                    ▼                    ▼
+                    tester writes         backend             frontend
+                    tests from it         implements          implements
+                         └────────────────────┴────────────────────┘
+                                              │  all repos archived
+                                              ▼
+                              intent archived → its specs ARE the
+                                                system's source of truth
 ```
 
-Tasks slice the *landing*, never the *spec*. The fix for a too-big story is an
-Epic, not more tasks. Branches are `PROJ-123-slug`, or
-`PROJ-123/PROJ-124-slug` when tasks own them — so the branch resolves to the
-labelled Story *and* the Task.
+One Jira story becomes one **master intent** in the shared `specifications`
+store: what is true today, why it must change, what the system must then do,
+and which repository owns which part. A team lead merges it — and that merge is
+the gate: no branch may exist before it.
 
-## Quick start (this repo)
+Then everyone works **at the same time**. The tester writes tests from the
+intent's scenarios before any code exists. Each repository derives its own
+OpenSpec change from the intent and runs its own `propose → apply → archive`.
+Backend and frontend never coordinate directly; they build against the contract
+the intent published.
+
+When every repository has archived its work, the intent itself is archived and
+its specs fold into `specifications/openspec/specs/` — the baseline the next
+intent is written against.
+
+## Quick start
 
 ```bash
 git clone --recurse-submodules <this-repo-url> workflow
 cd workflow
-make init      # submodule update + register the shared "specifications" store
-make doctor    # sanity-check the OpenSpec root/store relationship
-make sync      # pull the latest shared specifications
-make check     # does the current checkout satisfy the SDD metric?
+make init          # submodules + register the shared "specifications" store
+make init-repos    # also wire every placeholder under src/
+make status        # what is in flight
+make check         # does this checkout satisfy the SDD metric?
 ```
+
+**If you are a backend/frontend developer**, you probably do not need this repo
+at all. Clone your own application repo and read
+[`docs/roles/developer.md`](./docs/roles/developer.md). This repo is for
+authoring intents that span repositories.
 
 ## Documentation
 
@@ -55,106 +64,113 @@ Read in this order the first time.
 
 | | |
 |---|---|
-| [Pipeline](./docs/pipeline.md) ([RU](./docs/pipeline.ru.md)) | **start here** — gates, owners, source-of-truth map |
+| [Workflow](./docs/workflow.md) ([RU](./docs/workflow.ru.md)) | **start here** — the five stages, source-of-truth map |
+| [Master intent](./docs/master-intent.md) ([RU](./docs/master-intent.ru.md)) | what goes in each artifact, and the altitude rules |
 | [Work types](./docs/work-types.md) ([RU](./docs/work-types.ru.md)) | the lane for *every* kind of work: bug, hotfix, tech debt, chore, spike |
-| [Scrum layer](./docs/scrum.md) ([RU](./docs/scrum.ru.md)) | dual-track sprints, the two boards, DoR/DoD, capacity, ceremonies |
-| [Release](./docs/release.md) ([RU](./docs/release.ru.md)) | versioning, tags, images, promotion, the Jira feedback loop |
-| [Automation](./docs/automation.md) ([RU](./docs/automation.ru.md)) | every trigger → action, every secret, and what humans still do |
-| [Build guide](./docs/build-guide.md) ([RU](./docs/build-guide.ru.md)) | **how to construct all of this**, nine phases, step by step |
-| [Jira ↔ SDD mapping](./docs/jira-sdd-mapping.md) ([RU](./docs/jira-sdd-mapping.ru.md)) | Epic/Story/Task ↔ OpenSpec, branch naming, the metric |
+| [Jira ↔ SDD](./docs/jira-sdd-mapping.md) ([RU](./docs/jira-sdd-mapping.ru.md)) | sizing, branch naming, and the metric |
+| [Boards](./docs/boards.md) ([RU](./docs/boards.ru.md)) | two boards per team, split by track — and why not one per role |
+| [Dashboards](./docs/dashboards.md) ([RU](./docs/dashboards.ru.md)) | the daily delivery board, and an optional monthly quality board |
 
-Role pipelines — read your own, skim the two either side of it:
+Role pages — read your own, skim the ones either side of it:
 
 | Role | | You own |
 |---|---|---|
-| Team lead | [EN](./docs/roles/team-lead.md) · [RU](./docs/roles/team-lead.ru.md) | sizing, labelling, sprint scope, the metric |
-| Tech lead | [EN](./docs/roles/tech-lead.md) · [RU](./docs/roles/tech-lead.ru.md) | contract approval, technical approach, prod promotion |
-| Analytics | [EN](./docs/roles/analytics.md) · [RU](./docs/roles/analytics.ru.md) | `proposal.md` + `specs/*.md` |
-| Developer | [EN](./docs/roles/developer.md) · [RU](./docs/roles/developer.ru.md) | `design.md` + `tasks.md` + the code |
+| Analytics | [EN](./docs/roles/analytics.md) · [RU](./docs/roles/analytics.ru.md) | the master intent |
+| Team lead | [EN](./docs/roles/team-lead.md) · [RU](./docs/roles/team-lead.ru.md) | sizing, review, the merge |
+| Developer | [EN](./docs/roles/developer.md) · [RU](./docs/roles/developer.ru.md) | your repo's derived change + code |
 | Tester | [EN](./docs/roles/tester.md) · [RU](./docs/roles/tester.ru.md) | scenario quality, verification |
-| DevOps | [EN](./docs/roles/devops.md) · [RU](./docs/roles/devops.ru.md) | the pipeline, promotion, rollback |
 
-[`AGENTS.md`](./AGENTS.md) is the full architecture reference behind all of it.
+[`AGENTS.md`](./AGENTS.md) is the architecture reference behind all of it.
+
+## Commands
+
+Every command exists for both CLIs. Claude uses `/sdd:intent`, Qwen `/sdd-intent`.
+
+Only four commands are custom, and none of them replaces a standard OpenSpec
+one. **Developers use stock OpenSpec, unchanged.**
+
+| Stage | Command | Who |
+|---|---|---|
+| understand the current system | `/opsx:explore` | analytics |
+| write the master intent | **`/sdd:intent`** | analytics |
+| review and approve it | **`/sdd:review`** | team lead |
+| test plan, before any code | **`/sdd:tests`** | tester |
+| derive this repo's change | `/opsx:propose` | developer |
+| implement | `/opsx:apply` | developer |
+| finish this repo's change | `/opsx:archive` | developer |
+| where is everything? | **`/sdd:status`** | anyone |
+| archive the intent | `make gate INTENT=<id>` then `openspec archive <id> --store specifications` | analytics |
+
+What makes the stock commands behave like this team's workflow is each
+repository's `openspec/config.yaml`: its `context`, `rules` and `operations`
+guidance are injected into the default commands by the CLI. Local knowledge
+travels as configuration, not as a forked command that drifts from upstream.
+
+The Qwen copies are **generated** from the Claude ones — edit
+`.claude/commands/sdd/`, then run `make commands`. `make commands-check` fails
+a build if they have drifted.
 
 ## Layout
 
 ```
-docs/               pipeline, work types, scrum, release, automation, roles
-specifications/     shared spec store (submodule) — cross-cutting contracts only
+docs/                    workflow, master intent, work types, Jira mapping, roles
+specifications/          submodule — the shared store; business source of truth
+  openspec/specs/          how the system behaves today
+  openspec/changes/        master intents in flight
+  openspec/schemas/        the master-intent workflow definition
 src/
-  common/           shared contracts/types, published as a package
-  frontend/         placeholder — real remote not wired up yet
-  backend/          placeholder
-  gitops_frontend/  placeholder
-  gitops_backend/   placeholder
-  nginx/            placeholder
+  backend/               each: own openspec specs + changes, own .claude/.qwen
+  frontend/
+  gitops_backend/
+  gitops_frontend/
+templates/repo-kit/      what scripts/setup-repo.sh installs into a repo
 scripts/
-  setup-openspec.sh  registers the specifications store locally (idempotent)
-  add-repo.sh        promotes a src/<name> placeholder to a real submodule
-  sync.sh            pulls latest specifications + reports submodule status
-  check-sdd.sh       checks the "story followed SDD" metric
-  release-version.sh next semver from conventional commits; tags; release notes
-  jira-release.sh    creates the Jira version, stamps Fix Versions
-  jira-deploy.sh     deploy comment + "Deployed Environments" field
-  promote.sh         copies an image digest between Argo CD overlays
-vars/                Jenkins shared library — the pipelines
-  sddRelease.groovy  gate 7 — version, tag, image, Fix Version
-  sddPromote.groovy  gate 10 — overlay write, Bitbucket PR for prod
-  sddObserve.groovy  gate 8 — Argo health, Jira feedback, rollback
-  sddPrChecks.groovy conventional PR titles, branch names, Jira key survival
-examples/            thin Jenkinsfiles each repo copies in
-```
-
-Promote a placeholder once its real repo exists:
-
-```bash
-scripts/add-repo.sh frontend ssh://git@bitbucket.acme.com/plat/frontend.git
+  setup-openspec.sh        register the store; check out submodules
+  setup-repo.sh            install the SDD kit into an application repo
+  intent-status.sh         where every intent has got to, read from the repos
+  intent-gate.sh           the hard gate before archiving an intent
+  check-sdd.sh             the "story followed SDD" metric
+  sync.sh                  pull the latest shared specifications
+  gen-qwen-commands.sh     regenerate the Qwen commands from the Claude ones
 ```
 
 ## The SDD metric
 
-A story counts as "followed SDD" when it is a Story labelled `SDD`, linked to
-an OpenSpec change, whose `tasks.md` sections carry Jira keys, whose branches
-match the naming pattern — and **whose spec delta was merged before the first
-commit on any branch**. That last condition is what separates *followed SDD*
-from *labelled SDD*.
+A story counts as "followed SDD" when it carries the `SDD` label and a branch
+names its key. Satisfying that mechanically takes a little more, and
+`check-sdd.sh` asserts all of it — including the one condition that cannot be
+faked: **the intent was merged before the first commit on any branch**.
 
 ```bash
-make check                                   # local root
-make check-shared                            # shared store
-JIRA_URL=... JIRA_TOKEN=... make check       # also assert the label via Jira
+make check
+JIRA_URL=... JIRA_TOKEN=... make check   # also assert the label via Jira
 ```
 
-## The release loop
+Without the Jira variables the label checks are *skipped, not passed*, and the
+script says so.
 
-Merge a PR and nothing else is asked of you:
+## The archive gate
 
-```
-squash merge to main in Bitbucket
-  -> Jenkins sddRelease
-  -> version from conventional commits      backend 1.4.2 -> 1.5.0
-  -> annotated tag + immutable image        backend-1.5.0
-  -> Jira version "backend 1.5.0" created, Fix Version stamped on PROJ-123
-  -> Argo CD repo dev overlay updated, Argo syncs
-  -> 🚀 "Deployed to dev — backend 1.5.0" commented on the ticket
-  -> story rolls up to Verifying, the tester is notified
-  -> tester passes -> staging automatically
-  -> prod: one Bitbucket pull request, one approval, one merge
-  -> Jira version marked Released, story Done
-```
-
-Details in [release.md](./docs/release.md), wiring in
-[automation.md](./docs/automation.md), and the order to build it in
-[build-guide.md](./docs/build-guide.md).
+`openspec archive --yes` only **warns** when a fan-out is incomplete, and a
+checkbox is just a character someone typed. So archiving a master intent goes
+through a gate that reads the repositories themselves:
 
 ```bash
-scripts/release-version.sh --service backend --json    # what would release?
-scripts/jira-release.sh --service backend --version 1.5.0 --dry-run
+make gate INTENT=<intent-id>
 ```
 
-## AI commands
+It fails if any repository named in `handoff.md` has not archived a change
+linking back to the intent, and it names the specific lie when a checkbox
+claims more than reality.
 
-`/sdd:intake` · `/sdd:plan` · `/sdd:qa-review` · `/sdd:gate` — role-scoped
-wrappers that enforce the sizing rule, the Jira link and the section
-convention. They sit on top of the raw OpenSpec commands (`/opsx:propose`,
-`/opsx:apply`, `/opsx:archive`, `/opsx:sync`, `/opsx:explore`, `/opsx:update`).
+## Adding a repository
+
+```bash
+scripts/setup-repo.sh <name> [path]
+```
+
+Installs the stock `opsx` commands for both CLIs, a rendered
+`openspec/config.yaml` carrying this team's context and rules, and the agent
+guides. No custom schema and no custom command: the repository uses the default
+`spec-driven` workflow. Point it at any path to set up a developer's own clone
+— the normal case in daily use.

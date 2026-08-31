@@ -1,5 +1,18 @@
 {
   "permissions": {
+    "allow": [
+      "Bash(openspec:*)",
+      "Bash(./scripts/intent-status.sh:*)",
+      "Bash(./scripts/check-sdd.sh:*)",
+      "Bash(./scripts/sync.sh:*)",
+      "Bash(./scripts/gen-qwen-commands.sh:*)",
+      "Bash(make:*)",
+      "Bash(git status:*)",
+      "Bash(git diff:*)",
+      "Bash(git log:*)",
+      "Bash(git branch:*)",
+      "Bash(git show:*)"
+    ],
     "deny": [
       "Bash(git push --force:*)",
       "Bash(git push -f:*)",

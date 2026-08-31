@@ -1,45 +1,56 @@
 SHELL := /bin/bash
 
-REPOS = specifications common backend frontend gitops_backend gitops_frontend nginx
-
-.PHONY: help init sync doctor check check-shared version notes
+.PHONY: help init init-repos sync status check gate commands commands-check doctor schemas
 
 help:
 	@echo "init          submodules + register the shared specifications store"
+	@echo "init-repos    the same, and wire every placeholder under src/"
 	@echo "sync          pull the latest shared specifications"
-	@echo "doctor        sanity-check the OpenSpec root/store relationship"
+	@echo "status        where every master intent has got to  [INTENT=<id>]"
+	@echo "gate          may INTENT=<id> be archived yet?"
 	@echo "check         does this checkout satisfy the SDD metric?"
-	@echo "check-shared  same, against the shared store"
-	@echo "version       next version for SERVICE=<name> (run inside an app repo)"
-	@echo "notes         release notes for SERVICE=<name>"
+	@echo "commands      regenerate the Qwen commands from the Claude ones"
+	@echo "commands-check fail if the Qwen commands are out of sync"
+	@echo "schemas       validate the master-intent schema"
+	@echo "doctor        sanity-check the OpenSpec root/store relationship"
 
 init:
-	git submodule update --init --recursive
 	./scripts/setup-openspec.sh
+
+init-repos:
+	./scripts/setup-openspec.sh --repos
 
 sync:
 	./scripts/sync.sh
 
-doctor:
-	openspec doctor
+# Where every master intent has got to, read from the repositories themselves
+# rather than from handoff.md's checkboxes. INTENT=<id> narrows it to one.
+status:
+	./scripts/intent-status.sh $(INTENT)
+
+# The hard gate before archiving a master intent. `openspec archive --yes` only
+# warns about an incomplete fan-out; this refuses.
+gate:
+	@if [ -z "$(INTENT)" ]; then echo "usage: make gate INTENT=<intent-id>"; exit 2; fi
+	./scripts/intent-gate.sh $(INTENT)
 
 # Does the current checkout satisfy the "story followed SDD" metric?
-# See docs/jira-sdd-mapping.md. Export JIRA_URL and JIRA_TOKEN to also
-# assert the SDD label and issue type against Jira itself.
+# Export JIRA_URL and JIRA_TOKEN to also assert the SDD label against Jira.
 check:
-	./scripts/check-sdd.sh
+	./scripts/check-sdd.sh --all
 
-# Same, against the shared cross-repo store.
-check-shared:
-	./scripts/check-sdd.sh --store specifications
+commands:
+	./scripts/gen-qwen-commands.sh
 
-# Release helpers. Run these from inside an application repo, pointing at this
-# repo's scripts - they read git history, not the workflow repo. See
-# docs/release.md.
-SERVICE ?= $(notdir $(CURDIR))
+commands-check:
+	./scripts/gen-qwen-commands.sh --check
 
-version:
-	./scripts/release-version.sh --service $(SERVICE)
+doctor:
+	openspec doctor --store specifications
 
-notes:
-	./scripts/release-version.sh --service $(SERVICE) --notes
+# The schema commands are experimental and do not accept --store, so the schema
+# must be validated from inside the root that owns it. `master-intent` is the
+# only custom schema in the system: the application repositories deliberately
+# use the stock `spec-driven` workflow, so there is nothing to validate there.
+schemas:
+	@(cd specifications && openspec schema validate master-intent)

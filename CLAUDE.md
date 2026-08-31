@@ -1,50 +1,57 @@
 # CLAUDE.md
 
 Architecture, conventions and the reasoning behind them live in
-[`AGENTS.md`](./AGENTS.md). Read it before changing anything structural.
-This file is only the short list of things that are easy to get wrong when
-working unattended.
+[`AGENTS.md`](./AGENTS.md). Read it before changing anything structural. This
+file is the short list of things that are easy to get wrong when working
+unattended.
 
 ## Working rules
 
 - **Every document has a Russian twin.** `docs/foo.md` requires
   `docs/foo.ru.md`, cross-linked at the top with flag links. A new doc is not
-  finished until both exist and both are in the README tables (EN and RU).
+  finished until both exist and both appear in the README tables (EN and RU).
 
-- **Gate numbering is the spine.** The eleven gates are defined in
-  [`docs/pipeline.md`](./docs/pipeline.md) and referenced by number across
-  every role page, both languages, and `.claude/commands/sdd/*`. Renumbering
-  is never a local edit — grep for `gate <n>` and `шлюз <n>` and update all of
-  them in the same change.
+- **Do not override the default OpenSpec commands.** Application repositories
+  use stock `/opsx:propose`, `/opsx:apply` and `/opsx:archive` with the stock
+  `spec-driven` schema. Anything the agent needs to know there goes into
+  `templates/repo-kit/openspec/config.yaml.tmpl` as `context`, `rules` or
+  `operations` guidance — never into a forked schema or a repo-local `/sdd:*`
+  command. The only custom step is `/sdd:intent`, which has no stock
+  equivalent because it spans every repository at once.
 
-- **`scripts/jira-release.sh` and `scripts/jira-deploy.sh` write to real Jira
-  tickets.** Both stamp Fix Versions and post comments across every issue in a
-  release range. Always run `--dry-run` first; these are deliberately left out
-  of the permission allowlist so they prompt.
+- **`.claude/commands/sdd/*.md` is the source; `.qwen/` is generated.** After
+  editing a command, run `make commands`. Never hand-edit a file under
+  `.qwen/commands/`. `make commands-check` fails if they have drifted.
 
-- **`scripts/promote.sh --push` / `--pr` pushes to the Argo CD repo**, which
-  deploys. Not allowlisted either, for the same reason.
+- **Never hand-tick a Fan-out checkbox** in an intent's `handoff.md`. Use
+  `scripts/intent-gate.sh <id> --tick`, which ticks only what it verified. The
+  gate exists precisely to catch hand-ticked boxes.
 
-- **CI/CD is Bitbucket Data Center + Jenkins + Argo CD.** There is no GitHub
-  here: no Actions, no `gh` CLI, no CODEOWNERS. Pull requests go through the
-  Bitbucket REST API (`scripts/lib/bitbucket.sh`), and merge control is
-  Bitbucket branch permissions plus required builds.
+- **Never archive a master intent without the gate passing**, and never reach
+  for `openspec archive --yes` to get past a failing fan-out. Archiving folds
+  specs into the shared baseline that every future intent is written against.
 
-- **Verify links after editing docs.** Many pages cross-reference each other by
-  anchor, including Cyrillic anchors. Broken anchors are silent — check them
-  rather than assuming.
+- **`openspec init` refuses to run while `store:` is set** in
+  `openspec/config.yaml`. To reinstall commands in this repo, temporarily
+  replace the config with `schema: spec-driven`, init, then restore it.
 
-- **Shell scripts:** `bash -n` every script after editing, and keep them
-  POSIX-ish bash with `set -uo pipefail`. They are meant to be runnable by hand
-  when a pipeline is down, so avoid dependencies beyond `git`, `curl`, `jq`
-  and `yq`.
+- **Shell scripts:** `bash -n` after every edit. Keep them bash 3.2 compatible
+  and limited to `git`, `sed`, `grep`, `awk` and `jq`. They must stay runnable
+  by hand when a pipeline is down.
+
+- **Watch the sed delimiter.** Repo role strings contain `/`
+  (`"the service layer and its HTTP/event APIs"`), so `setup-repo.sh` uses `#`
+  as the substitution delimiter. Do not change it back.
+
+- **Report the ordering failure honestly.** If a branch was cut before its
+  intent merged, the story did not follow SDD. Never suggest rewriting history
+  to make the metric pass.
 
 ## Layout reminders
 
-- `docs/` — pipeline, work types, scrum, release, automation, build guide, roles
-- `scripts/` — the metric check plus the release/Jira/GitOps automation
-- `vars/` — the Jenkins shared library; this repo *is* the library, which is
-  why `vars/` sits at the root. `examples/` holds the thin Jenkinsfiles each
-  repo copies in.
-- `src/*` — placeholders until promoted with `scripts/add-repo.sh`
-- `specifications/` — submodule; the shared spec store, kept deliberately small
+- `docs/` — workflow, master intent, work types, Jira mapping, roles
+- `specifications/` — submodule; the shared store and the `master-intent` schema
+- `src/*` — application repos, each with its own OpenSpec root
+- `templates/repo-kit/` — what `setup-repo.sh` installs; edit here, then
+  re-run `scripts/setup-repo.sh <name>`, never edit `src/*` by hand
+- `scripts/` — setup, fan-out status, the archive gate, the metric

@@ -3,3 +3,7 @@
 .idea/
 .vscode/
 *.code-workspace
+
+# Claude Code / Qwen Code local overrides
+.claude/settings.local.json
+.qwen/settings.local.json
